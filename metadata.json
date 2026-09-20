@@ -1,0 +1,6 @@
+{
+  "name": "Om Jyoti Engineering CRM",
+  "description": "Role-based CRM backend and full-stack application for Om Jyoti Engineering featuring lead management, employee and team hierarchies, inventory control, call logs, and analytics.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

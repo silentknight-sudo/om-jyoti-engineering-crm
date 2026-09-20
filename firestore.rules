@@ -1,0 +1,109 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Helper functions
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function getUserData() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+    }
+
+    function getUserRole() {
+      return isAuthenticated() && exists(/databases/$(database)/documents/users/$(request.auth.uid))
+        ? getUserData().role
+        : 'guest';
+    }
+
+    function isSuperAdmin() {
+      return getUserRole() == 'super_admin';
+    }
+
+    function isTeamLead() {
+      return getUserRole() == 'team_lead' || isSuperAdmin();
+    }
+
+    function isManager() {
+      return getUserRole() == 'manager' || isSuperAdmin();
+    }
+
+    function isTelecaller() {
+      return getUserRole() == 'telecaller';
+    }
+
+    function isStaff() {
+      return isAuthenticated();
+    }
+
+    // Users Collection
+    match /users/{userId} {
+      allow read: if isStaff();
+      allow create: if isSuperAdmin() || (isAuthenticated() && request.auth.uid == userId);
+      allow update: if isSuperAdmin() || (isAuthenticated() && request.auth.uid == userId);
+      allow delete: if isSuperAdmin();
+    }
+
+    // Leads Collection
+    match /leads/{leadId} {
+      allow read: if isStaff();
+      allow create: if isStaff();
+      allow update: if isStaff();
+      allow delete: if isSuperAdmin() || isTeamLead() || isManager();
+    }
+
+    // Call Logs Collection
+    match /call_logs/{logId} {
+      allow read: if isStaff();
+      allow create: if isStaff();
+      allow update: if isStaff();
+      allow delete: if isSuperAdmin() || isTeamLead();
+    }
+
+    // Lead Notes Collection
+    match /lead_notes/{noteId} {
+      allow read: if isStaff();
+      allow create: if isStaff();
+      allow update: if isStaff() && (request.auth.uid == resource.data.authorId || isSuperAdmin());
+      allow delete: if isSuperAdmin() || isTeamLead();
+    }
+
+    // Inventory Items Collection
+    match /inventory_items/{itemId} {
+      allow read: if isStaff();
+      allow create: if isSuperAdmin() || isManager();
+      allow update: if isStaff();
+      allow delete: if isSuperAdmin() || isManager();
+    }
+
+    // Stock Movements Collection
+    match /stock_movements/{movementId} {
+      allow read: if isStaff();
+      allow create: if isStaff();
+      allow update: if isSuperAdmin();
+      allow delete: if isSuperAdmin();
+    }
+
+    // Activity Logs Collection
+    match /activity_logs/{logId} {
+      allow read: if isSuperAdmin() || isManager() || isTeamLead();
+      allow create: if isStaff();
+      allow update: if false; // Immutable audit trail
+      allow delete: if false; // Immutable audit trail
+    }
+
+    // Settings Collection
+    match /settings/{settingId} {
+      allow read: if isStaff();
+      allow write: if isSuperAdmin() || isManager();
+    }
+
+    // Roles Collection
+    match /roles/{roleId} {
+      allow read: if isStaff();
+      allow write: if isSuperAdmin();
+    }
+  }
+}

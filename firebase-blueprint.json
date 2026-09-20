@@ -1,0 +1,157 @@
+{
+  "$schema": "https://firebase.google.com/schemas/firestore-blueprint.json",
+  "entities": {
+    "User": {
+      "collection": "users",
+      "fields": {
+        "id": { "type": "string" },
+        "email": { "type": "string" },
+        "firstName": { "type": "string" },
+        "lastName": { "type": "string" },
+        "role": { "type": "string" },
+        "roleId": { "type": "string" },
+        "department": { "type": "string" },
+        "phone": { "type": "string" },
+        "employeeCode": { "type": "string" },
+        "status": { "type": "string" },
+        "permissions": { "type": "array" },
+        "avatar": { "type": "string" },
+        "createdAt": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      }
+    },
+    "Lead": {
+      "collection": "leads",
+      "fields": {
+        "id": { "type": "string" },
+        "leadNo": { "type": "string" },
+        "customerName": { "type": "string" },
+        "companyName": { "type": "string" },
+        "contactPhone": { "type": "string" },
+        "altPhone": { "type": "string" },
+        "email": { "type": "string" },
+        "city": { "type": "string" },
+        "state": { "type": "string" },
+        "address": { "type": "string" },
+        "requirementDescription": { "type": "string" },
+        "capacity": { "type": "string" },
+        "budget": { "type": "number" },
+        "status": { "type": "string" },
+        "priority": { "type": "string" },
+        "source": { "type": "string" },
+        "assignedToId": { "type": "string" },
+        "assignedToName": { "type": "string" },
+        "createdById": { "type": "string" },
+        "createdByName": { "type": "string" },
+        "createdAt": { "type": "string" },
+        "updatedAt": { "type": "string" },
+        "lastContactedAt": { "type": "string" },
+        "nextFollowUpAt": { "type": "string" },
+        "wonAt": { "type": "string" },
+        "lostReason": { "type": "string" },
+        "tags": { "type": "array" }
+      }
+    },
+    "CallLog": {
+      "collection": "call_logs",
+      "fields": {
+        "id": { "type": "string" },
+        "leadId": { "type": "string" },
+        "leadName": { "type": "string" },
+        "callerId": { "type": "string" },
+        "callerName": { "type": "string" },
+        "status": { "type": "string" },
+        "duration": { "type": "number" },
+        "notes": { "type": "string" },
+        "recordingUrl": { "type": "string" },
+        "nextFollowUp": { "type": "string" },
+        "createdAt": { "type": "string" }
+      }
+    },
+    "LeadNote": {
+      "collection": "lead_notes",
+      "fields": {
+        "id": { "type": "string" },
+        "leadId": { "type": "string" },
+        "authorId": { "type": "string" },
+        "authorName": { "type": "string" },
+        "text": { "type": "string" },
+        "createdAt": { "type": "string" }
+      }
+    },
+    "InventoryItem": {
+      "collection": "inventory_items",
+      "fields": {
+        "id": { "type": "string" },
+        "sku": { "type": "string" },
+        "name": { "type": "string" },
+        "category": { "type": "string" },
+        "subcategory": { "type": "string" },
+        "unit": { "type": "string" },
+        "minThreshold": { "type": "number" },
+        "costPrice": { "type": "number" },
+        "sellingPrice": { "type": "number" },
+        "inStock": { "type": "number" },
+        "reserved": { "type": "number" },
+        "available": { "type": "number" },
+        "status": { "type": "string" },
+        "location": { "type": "string" },
+        "specifications": { "type": "object" },
+        "createdAt": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      }
+    },
+    "StockMovement": {
+      "collection": "stock_movements",
+      "fields": {
+        "id": { "type": "string" },
+        "itemId": { "type": "string" },
+        "itemName": { "type": "string" },
+        "type": { "type": "string" },
+        "quantity": { "type": "number" },
+        "previousStock": { "type": "number" },
+        "newStock": { "type": "number" },
+        "referenceNo": { "type": "string" },
+        "reason": { "type": "string" },
+        "performedById": { "type": "string" },
+        "performedByName": { "type": "string" },
+        "timestamp": { "type": "string" }
+      }
+    },
+    "ActivityLog": {
+      "collection": "activity_logs",
+      "fields": {
+        "id": { "type": "string" },
+        "actorId": { "type": "string" },
+        "actorName": { "type": "string" },
+        "actorRole": { "type": "string" },
+        "action": { "type": "string" },
+        "entityType": { "type": "string" },
+        "entityId": { "type": "string" },
+        "details": { "type": "string" },
+        "timestamp": { "type": "string" }
+      }
+    },
+    "Setting": {
+      "collection": "settings",
+      "fields": {
+        "id": { "type": "string" },
+        "key": { "type": "string" },
+        "value": { "type": "any" },
+        "updatedAt": { "type": "string" },
+        "updatedBy": { "type": "string" }
+      }
+    },
+    "Role": {
+      "collection": "roles",
+      "fields": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "description": { "type": "string" },
+        "permissions": { "type": "array" },
+        "isCustom": { "type": "boolean" },
+        "createdAt": { "type": "string" }
+      }
+    }
+  }
+}
