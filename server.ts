@@ -2,7 +2,7 @@ import express, { Request, Response, NextFunction } from 'express';
 import path from 'path';
 import { createServer as createViteServer } from 'vite';
 import { db } from './server/db';
-import { User, Lead, LeadStatus, MovementType, Party, CustomerEquipment, ServiceJob, Quotation } from './src/types';
+import { User, Lead, LeadStatus, MovementType, Party, CustomerEquipment, ServiceJob, Quotation, Invoice, PaymentIn } from './src/types';
 
 const app = express();
 const PORT = 3000;
@@ -1429,6 +1429,219 @@ app.delete('/api/v1/quotations/:id', (req: Request, res: Response) => {
   if (idx === -1) return sendError(res, 404, 'NOT_FOUND', 'Quotation not found');
   db.quotations.splice(idx, 1);
   return res.json({ message: 'Quotation deleted successfully' });
+});
+
+// ==========================================
+// 4E. SALES INVOICES ENDPOINTS
+// ==========================================
+
+function computeInvoiceStatus(inv: Invoice): Invoice['status'] {
+  if (inv.status === 'cancelled') return 'cancelled';
+  if (inv.amountPaid >= inv.grandTotal && inv.grandTotal > 0) return 'paid';
+  if (inv.amountPaid > 0) return 'partially_paid';
+  if (new Date(inv.dueDate) < new Date()) return 'overdue';
+  return 'unpaid';
+}
+
+app.get('/api/v1/invoices', (req: Request, res: Response) => {
+  const { status, partyId, search } = req.query;
+  let results = [...db.invoices];
+  if (status && status !== 'all') results = results.filter(i => i.status === status);
+  if (partyId) results = results.filter(i => i.partyId === partyId);
+  if (search) {
+    const q = (search as string).toLowerCase();
+    results = results.filter(i =>
+      i.partyName.toLowerCase().includes(q) ||
+      i.invoiceNumber.toLowerCase().includes(q)
+    );
+  }
+  results.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+  return res.json({ invoices: results, total: results.length });
+});
+
+app.get('/api/v1/invoices/:id', (req: Request, res: Response) => {
+  const invoice = db.invoices.find(i => i.id === req.params.id);
+  if (!invoice) return sendError(res, 404, 'NOT_FOUND', 'Invoice not found');
+  const payments = db.payments.filter(p => p.invoiceId === invoice.id);
+  return res.json({ invoice, payments });
+});
+
+app.post('/api/v1/invoices', (req: Request, res: Response) => {
+  const currentUser = extractUserFromHeader(req) || db.users[0];
+  const { partyId, items, dueDate, quotationId } = req.body;
+
+  const party = db.parties.find(p => p.id === partyId);
+  if (!party) return sendError(res, 400, 'VALIDATION_ERROR', 'A valid customer is required');
+  if (!Array.isArray(items) || items.length === 0) {
+    return sendError(res, 400, 'VALIDATION_ERROR', 'At least one line item is required');
+  }
+
+  const totals = computeQuotationTotals(items);
+  const now = new Date().toISOString();
+  const year = new Date().getFullYear();
+
+  const newInvoice: Invoice = {
+    id: 'inv-' + Date.now(),
+    invoiceNumber: `INV-${year}-${String(db.invoices.length + 1).padStart(4, '0')}`,
+    partyId: party.id,
+    partyName: party.name,
+    partyPhone: party.phone,
+    partyAddress: party.billingAddress,
+    partyGstin: party.gstin,
+    quotationId: quotationId || undefined,
+    invoiceDate: req.body.invoiceDate || now,
+    dueDate: dueDate || now,
+    status: 'unpaid',
+    ...totals,
+    amountPaid: 0,
+    balanceDue: totals.grandTotal,
+    termsAndConditions: req.body.termsAndConditions || 'Payment due within stated terms. Late payments may attract interest as per company policy.',
+    notes: req.body.notes || '',
+    createdById: currentUser.id,
+    createdByName: `${currentUser.firstName} ${currentUser.lastName}`,
+    createdAt: now,
+    updatedAt: now
+  };
+
+  db.invoices.push(newInvoice);
+
+  if (quotationId) {
+    const quotation = db.quotations.find(q => q.id === quotationId);
+    if (quotation) {
+      quotation.status = 'converted';
+      quotation.updatedAt = now;
+    }
+  }
+
+  db.logActivity(currentUser, `created invoice ${newInvoice.invoiceNumber} for ${party.name}`, 'lead', party.id);
+  return res.status(201).json({ message: 'Invoice created successfully', invoice: newInvoice });
+});
+
+app.put('/api/v1/invoices/:id', (req: Request, res: Response) => {
+  const currentUser = extractUserFromHeader(req) || db.users[0];
+  const invoice = db.invoices.find(i => i.id === req.params.id);
+  if (!invoice) return sendError(res, 404, 'NOT_FOUND', 'Invoice not found');
+
+  if (req.body.items) {
+    const totals = computeQuotationTotals(req.body.items);
+    Object.assign(invoice, totals);
+    invoice.balanceDue = Math.max(0, totals.grandTotal - invoice.amountPaid);
+  }
+
+  const { items, ...rest } = req.body;
+  Object.assign(invoice, rest, { id: invoice.id, updatedAt: new Date().toISOString() });
+  invoice.status = computeInvoiceStatus(invoice);
+
+  db.logActivity(currentUser, `updated invoice ${invoice.invoiceNumber}`, 'lead', invoice.partyId);
+  return res.json({ message: 'Invoice updated successfully', invoice });
+});
+
+app.patch('/api/v1/invoices/:id/status', (req: Request, res: Response) => {
+  const currentUser = extractUserFromHeader(req) || db.users[0];
+  const invoice = db.invoices.find(i => i.id === req.params.id);
+  if (!invoice) return sendError(res, 404, 'NOT_FOUND', 'Invoice not found');
+  invoice.status = req.body.status;
+  invoice.updatedAt = new Date().toISOString();
+  db.logActivity(currentUser, `marked invoice ${invoice.invoiceNumber} as ${invoice.status}`, 'lead', invoice.partyId);
+  return res.json({ message: 'Invoice status updated', invoice });
+});
+
+app.delete('/api/v1/invoices/:id', (req: Request, res: Response) => {
+  const idx = db.invoices.findIndex(i => i.id === req.params.id);
+  if (idx === -1) return sendError(res, 404, 'NOT_FOUND', 'Invoice not found');
+  db.invoices.splice(idx, 1);
+  return res.json({ message: 'Invoice deleted successfully' });
+});
+
+// ==========================================
+// 4F. PAYMENT IN ENDPOINTS
+// ==========================================
+
+app.get('/api/v1/payments', (req: Request, res: Response) => {
+  const { partyId, invoiceId, search } = req.query;
+  let results = [...db.payments];
+  if (partyId) results = results.filter(p => p.partyId === partyId);
+  if (invoiceId) results = results.filter(p => p.invoiceId === invoiceId);
+  if (search) {
+    const q = (search as string).toLowerCase();
+    results = results.filter(p =>
+      p.partyName.toLowerCase().includes(q) ||
+      p.paymentNumber.toLowerCase().includes(q) ||
+      (p.invoiceNumber || '').toLowerCase().includes(q)
+    );
+  }
+  results.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+  return res.json({ payments: results, total: results.length });
+});
+
+app.post('/api/v1/payments', (req: Request, res: Response) => {
+  const currentUser = extractUserFromHeader(req) || db.users[0];
+  const { partyId, invoiceId, amount, paymentMode = 'cash' } = req.body;
+
+  const party = db.parties.find(p => p.id === partyId);
+  if (!party) return sendError(res, 400, 'VALIDATION_ERROR', 'A valid customer is required');
+  const paidAmount = Number(amount);
+  if (!paidAmount || paidAmount <= 0) return sendError(res, 400, 'VALIDATION_ERROR', 'A valid payment amount is required');
+
+  let invoice: Invoice | undefined;
+  if (invoiceId) {
+    invoice = db.invoices.find(i => i.id === invoiceId);
+    if (!invoice) return sendError(res, 400, 'VALIDATION_ERROR', 'Invoice not found');
+  }
+
+  const now = new Date().toISOString();
+  const year = new Date().getFullYear();
+
+  const newPayment: PaymentIn = {
+    id: 'pay-' + Date.now(),
+    paymentNumber: `PAY-${year}-${String(db.payments.length + 1).padStart(4, '0')}`,
+    partyId: party.id,
+    partyName: party.name,
+    invoiceId: invoice?.id,
+    invoiceNumber: invoice?.invoiceNumber,
+    amount: paidAmount,
+    paymentMode,
+    referenceNumber: req.body.referenceNumber || '',
+    paymentDate: req.body.paymentDate || now,
+    notes: req.body.notes || '',
+    createdById: currentUser.id,
+    createdByName: `${currentUser.firstName} ${currentUser.lastName}`,
+    createdAt: now
+  };
+
+  db.payments.push(newPayment);
+
+  if (invoice) {
+    invoice.amountPaid = Number((invoice.amountPaid + paidAmount).toFixed(2));
+    invoice.balanceDue = Math.max(0, Number((invoice.grandTotal - invoice.amountPaid).toFixed(2)));
+    invoice.status = computeInvoiceStatus(invoice);
+    invoice.updatedAt = now;
+  }
+
+  party.openingBalance = party.balanceType === 'to_collect'
+    ? Math.max(0, Number((party.openingBalance - paidAmount).toFixed(2)))
+    : party.openingBalance;
+
+  db.logActivity(currentUser, `recorded payment of ${paidAmount} from ${party.name}`, 'lead', party.id);
+  return res.status(201).json({ message: 'Payment recorded successfully', payment: newPayment, invoice });
+});
+
+app.delete('/api/v1/payments/:id', (req: Request, res: Response) => {
+  const idx = db.payments.findIndex(p => p.id === req.params.id);
+  if (idx === -1) return sendError(res, 404, 'NOT_FOUND', 'Payment not found');
+  const [removed] = db.payments.splice(idx, 1);
+
+  if (removed.invoiceId) {
+    const invoice = db.invoices.find(i => i.id === removed.invoiceId);
+    if (invoice) {
+      invoice.amountPaid = Math.max(0, Number((invoice.amountPaid - removed.amount).toFixed(2)));
+      invoice.balanceDue = Math.max(0, Number((invoice.grandTotal - invoice.amountPaid).toFixed(2)));
+      invoice.status = computeInvoiceStatus(invoice);
+      invoice.updatedAt = new Date().toISOString();
+    }
+  }
+
+  return res.json({ message: 'Payment deleted successfully' });
 });
 
 // ==========================================

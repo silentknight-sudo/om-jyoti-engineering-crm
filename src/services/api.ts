@@ -18,7 +18,9 @@ import {
   Party,
   CustomerEquipment,
   ServiceJob,
-  Quotation
+  Quotation,
+  Invoice,
+  PaymentIn
 } from '../types';
 
 let authToken: string | null = localStorage.getItem('omjyoti_auth_token') || 'usr-admin-1';
@@ -410,6 +412,54 @@ export const api = {
 
   async deleteQuotation(id: string): Promise<{ message: string }> {
     return request(`/api/v1/quotations/${id}`, { method: 'DELETE' });
+  },
+
+  // Sales Invoices
+  async getInvoices(params?: { status?: string; partyId?: string; search?: string }): Promise<{ invoices: Invoice[]; total: number }> {
+    const searchParams = new URLSearchParams();
+    if (params?.status) searchParams.set('status', params.status);
+    if (params?.partyId) searchParams.set('partyId', params.partyId);
+    if (params?.search) searchParams.set('search', params.search);
+    const query = searchParams.toString();
+    return request(`/api/v1/invoices${query ? '?' + query : ''}`);
+  },
+
+  async getInvoiceById(id: string): Promise<{ invoice: Invoice; payments: PaymentIn[] }> {
+    return request(`/api/v1/invoices/${id}`);
+  },
+
+  async createInvoice(data: Partial<Invoice>): Promise<{ message: string; invoice: Invoice }> {
+    return request('/api/v1/invoices', { method: 'POST', body: JSON.stringify(data) });
+  },
+
+  async updateInvoice(id: string, data: Partial<Invoice>): Promise<{ message: string; invoice: Invoice }> {
+    return request(`/api/v1/invoices/${id}`, { method: 'PUT', body: JSON.stringify(data) });
+  },
+
+  async updateInvoiceStatus(id: string, status: string): Promise<{ message: string; invoice: Invoice }> {
+    return request(`/api/v1/invoices/${id}/status`, { method: 'PATCH', body: JSON.stringify({ status }) });
+  },
+
+  async deleteInvoice(id: string): Promise<{ message: string }> {
+    return request(`/api/v1/invoices/${id}`, { method: 'DELETE' });
+  },
+
+  // Payment In
+  async getPayments(params?: { partyId?: string; invoiceId?: string; search?: string }): Promise<{ payments: PaymentIn[]; total: number }> {
+    const searchParams = new URLSearchParams();
+    if (params?.partyId) searchParams.set('partyId', params.partyId);
+    if (params?.invoiceId) searchParams.set('invoiceId', params.invoiceId);
+    if (params?.search) searchParams.set('search', params.search);
+    const query = searchParams.toString();
+    return request(`/api/v1/payments${query ? '?' + query : ''}`);
+  },
+
+  async createPayment(data: Partial<PaymentIn>): Promise<{ message: string; payment: PaymentIn; invoice?: Invoice }> {
+    return request('/api/v1/payments', { method: 'POST', body: JSON.stringify(data) });
+  },
+
+  async deletePayment(id: string): Promise<{ message: string }> {
+    return request(`/api/v1/payments/${id}`, { method: 'DELETE' });
   },
 
   // Dashboard & Analytics

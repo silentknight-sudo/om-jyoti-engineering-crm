@@ -17,7 +17,9 @@ import {
   Party,
   CustomerEquipment,
   ServiceJob,
-  Quotation
+  Quotation,
+  Invoice,
+  PaymentIn
 } from '../src/types';
 
 // In-Memory Database Store for Om Jyoti Engineering CRM
@@ -100,6 +102,8 @@ export class Database {
   equipment: CustomerEquipment[] = [];
   serviceJobs: ServiceJob[] = [];
   quotations: Quotation[] = [];
+  invoices: Invoice[] = [];
+  payments: PaymentIn[] = [];
 
   activityLogs: ActivityLog[] = [
     {

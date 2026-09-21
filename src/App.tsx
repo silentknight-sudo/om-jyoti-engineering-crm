@@ -15,6 +15,7 @@ import { EmployeesView } from './components/employees/EmployeesView';
 import { SettingsAuditView } from './components/settings/SettingsAuditView';
 import { CustomersView } from './components/customers/CustomersView';
 import { QuotationsView } from './components/quotations/QuotationsView';
+import { InvoicesView } from './components/invoices/InvoicesView';
 import { ServiceJobsView } from './components/service/ServiceJobsView';
 import { Lead } from './types';
 
@@ -115,6 +116,8 @@ const MainLayout: React.FC = () => {
           {activeTab === 'customers' && <CustomersView />}
 
           {activeTab === 'quotations' && <QuotationsView />}
+
+          {activeTab === 'invoices' && <InvoicesView />}
 
           {activeTab === 'service' && <ServiceJobsView />}
 

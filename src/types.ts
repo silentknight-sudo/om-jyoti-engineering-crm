@@ -334,6 +334,67 @@ export interface Quotation {
   updatedAt: string;
 }
 
+export type InvoiceStatus = 'unpaid' | 'partially_paid' | 'paid' | 'overdue' | 'cancelled';
+
+export interface InvoiceLineItem {
+  id: string;
+  productId?: string;
+  description: string;
+  hsnCode?: string;
+  quantity: number;
+  unit: string;
+  rate: number;
+  discountPercent: number;
+  taxPercent: number;
+  amount: number;
+}
+
+export interface Invoice {
+  id: string;
+  invoiceNumber: string; // e.g. INV-2026-0001
+  partyId: string;
+  partyName: string;
+  partyPhone?: string;
+  partyAddress?: string;
+  partyGstin?: string;
+  quotationId?: string;
+  invoiceDate: string;
+  dueDate: string;
+  status: InvoiceStatus;
+  items: InvoiceLineItem[];
+  subtotal: number;
+  totalDiscount: number;
+  totalTax: number;
+  grandTotal: number;
+  amountPaid: number;
+  balanceDue: number;
+  termsAndConditions?: string;
+  notes?: string;
+  createdById: string;
+  createdByName?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type PaymentMode = 'cash' | 'bank_transfer' | 'upi' | 'cheque' | 'card' | 'other';
+
+export interface PaymentIn {
+  id: string;
+  paymentNumber: string; // e.g. PAY-2026-0001
+  partyId: string;
+  partyName: string;
+  invoiceId?: string;
+  invoiceNumber?: string;
+  amount: number;
+  paymentMode: PaymentMode;
+  referenceNumber?: string;
+  paymentDate: string;
+  notes?: string;
+  createdById: string;
+  createdByName?: string;
+  createdAt: string;
+}
+
 export interface DashboardKPIData {
   totalLeads: number;
   totalLeadsChange: number; // percentage e.g. 12
