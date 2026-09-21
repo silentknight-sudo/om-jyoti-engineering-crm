@@ -2,7 +2,7 @@ import express, { Request, Response, NextFunction } from 'express';
 import path from 'path';
 import { createServer as createViteServer } from 'vite';
 import { db } from './server/db';
-import { User, Lead, LeadStatus, MovementType } from './src/types';
+import { User, Lead, LeadStatus, MovementType, Party, CustomerEquipment, ServiceJob, Quotation } from './src/types';
 
 const app = express();
 const PORT = 3000;
@@ -1057,6 +1057,378 @@ app.post('/api/v1/inventory/suppliers', (req: Request, res: Response) => {
   db.suppliers.push(newSupplier);
   db.logActivity(currentUser, `added supplier ${newSupplier.name}`, 'inventory', newSupplier.id);
   return res.status(201).json({ supplier: newSupplier });
+});
+
+// ==========================================
+// 4B. PARTIES (CUSTOMERS & SUPPLIERS) ENDPOINTS
+// ==========================================
+
+app.get('/api/v1/parties', (req: Request, res: Response) => {
+  const { partyType, search, status } = req.query;
+  let results = [...db.parties];
+  if (partyType && partyType !== 'all') {
+    results = results.filter(p => p.partyType === partyType);
+  }
+  if (status && status !== 'all') {
+    results = results.filter(p => p.status === status);
+  }
+  if (search) {
+    const q = (search as string).toLowerCase();
+    results = results.filter(p =>
+      p.name.toLowerCase().includes(q) ||
+      p.phone.includes(q) ||
+      (p.email || '').toLowerCase().includes(q) ||
+      p.partyIdNumber.toLowerCase().includes(q)
+    );
+  }
+  results.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+  return res.json({ parties: results, total: results.length });
+});
+
+app.get('/api/v1/parties/:id', (req: Request, res: Response) => {
+  const party = db.parties.find(p => p.id === req.params.id);
+  if (!party) return sendError(res, 404, 'NOT_FOUND', 'Party not found');
+  const equipment = db.equipment.filter(e => e.partyId === party.id);
+  const serviceJobs = db.serviceJobs.filter(j => j.partyId === party.id).sort((a, b) => new Date(b.scheduledDate).getTime() - new Date(a.scheduledDate).getTime());
+  const quotations = db.quotations.filter(q => q.partyId === party.id).sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+  return res.json({ party, equipment, serviceJobs, quotations });
+});
+
+app.post('/api/v1/parties', (req: Request, res: Response) => {
+  const currentUser = extractUserFromHeader(req) || db.users[0];
+  const { name, phone, partyType = 'customer' } = req.body;
+  if (!name || !name.trim()) return sendError(res, 400, 'VALIDATION_ERROR', 'Party name is required');
+  if (!phone || !validatePhone(phone)) return sendError(res, 400, 'VALIDATION_ERROR', 'A valid mobile number is required');
+
+  const newParty: Party = {
+    id: 'party-' + Date.now(),
+    partyIdNumber: db.nextSequence(partyType === 'supplier' ? 'SUPP' : 'CUST', db.parties.filter(p => p.partyType === partyType).length),
+    partyType,
+    name: name.trim(),
+    contactPerson: req.body.contactPerson || '',
+    phone: phone.trim(),
+    email: req.body.email || '',
+    gstin: req.body.gstin || '',
+    panNumber: req.body.panNumber || '',
+    billingAddress: req.body.billingAddress || '',
+    shippingAddress: req.body.shippingAddress || '',
+    city: req.body.city || '',
+    state: req.body.state || '',
+    postalCode: req.body.postalCode || '',
+    openingBalance: Number(req.body.openingBalance) || 0,
+    balanceType: req.body.balanceType || 'to_collect',
+    notes: req.body.notes || '',
+    status: 'active',
+    createdById: currentUser.id,
+    createdByName: `${currentUser.firstName} ${currentUser.lastName}`,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString()
+  };
+
+  db.parties.push(newParty);
+  db.logActivity(currentUser, `added ${partyType} ${newParty.name}`, 'lead', newParty.id);
+  return res.status(201).json({ message: 'Party created successfully', party: newParty });
+});
+
+app.put('/api/v1/parties/:id', (req: Request, res: Response) => {
+  const currentUser = extractUserFromHeader(req) || db.users[0];
+  const party = db.parties.find(p => p.id === req.params.id);
+  if (!party) return sendError(res, 404, 'NOT_FOUND', 'Party not found');
+  Object.assign(party, req.body, { id: party.id, updatedAt: new Date().toISOString() });
+  db.logActivity(currentUser, `updated party ${party.name}`, 'lead', party.id);
+  return res.json({ message: 'Party updated successfully', party });
+});
+
+app.delete('/api/v1/parties/:id', (req: Request, res: Response) => {
+  const currentUser = extractUserFromHeader(req) || db.users[0];
+  const idx = db.parties.findIndex(p => p.id === req.params.id);
+  if (idx === -1) return sendError(res, 404, 'NOT_FOUND', 'Party not found');
+  const [removed] = db.parties.splice(idx, 1);
+  db.logActivity(currentUser, `deleted party ${removed.name}`, 'lead', removed.id);
+  return res.json({ message: 'Party deleted successfully' });
+});
+
+// Customer Equipment (water treatment plants owned by customer)
+app.post('/api/v1/parties/:id/equipment', (req: Request, res: Response) => {
+  const currentUser = extractUserFromHeader(req) || db.users[0];
+  const party = db.parties.find(p => p.id === req.params.id);
+  if (!party) return sendError(res, 404, 'NOT_FOUND', 'Party not found');
+  const { equipmentName, category } = req.body;
+  if (!equipmentName || !category) return sendError(res, 400, 'VALIDATION_ERROR', 'Equipment name and category are required');
+
+  const newEquipment: CustomerEquipment = {
+    id: 'equip-' + Date.now(),
+    partyId: party.id,
+    equipmentName: equipmentName.trim(),
+    category,
+    make: req.body.make || '',
+    model: req.body.model || '',
+    capacity: req.body.capacity || '',
+    serialNumber: req.body.serialNumber || '',
+    installationDate: req.body.installationDate || '',
+    warrantyExpiryDate: req.body.warrantyExpiryDate || '',
+    amcActive: !!req.body.amcActive,
+    amcStartDate: req.body.amcStartDate || '',
+    amcEndDate: req.body.amcEndDate || '',
+    serviceFrequencyDays: Number(req.body.serviceFrequencyDays) || 90,
+    lastServiceDate: req.body.lastServiceDate || '',
+    nextDueDate: req.body.nextDueDate || '',
+    location: req.body.location || '',
+    notes: req.body.notes || '',
+    createdAt: new Date().toISOString()
+  };
+
+  db.equipment.push(newEquipment);
+  db.logActivity(currentUser, `added equipment ${newEquipment.equipmentName} for ${party.name}`, 'lead', party.id);
+  return res.status(201).json({ message: 'Equipment added successfully', equipment: newEquipment });
+});
+
+app.put('/api/v1/equipment/:id', (req: Request, res: Response) => {
+  const equipment = db.equipment.find(e => e.id === req.params.id);
+  if (!equipment) return sendError(res, 404, 'NOT_FOUND', 'Equipment not found');
+  Object.assign(equipment, req.body, { id: equipment.id });
+  return res.json({ message: 'Equipment updated successfully', equipment });
+});
+
+app.delete('/api/v1/equipment/:id', (req: Request, res: Response) => {
+  const idx = db.equipment.findIndex(e => e.id === req.params.id);
+  if (idx === -1) return sendError(res, 404, 'NOT_FOUND', 'Equipment not found');
+  db.equipment.splice(idx, 1);
+  return res.json({ message: 'Equipment deleted successfully' });
+});
+
+// ==========================================
+// 4C. SERVICE JOBS (AMC / BREAKDOWN / INSTALLATION) ENDPOINTS
+// ==========================================
+
+app.get('/api/v1/service-jobs', (req: Request, res: Response) => {
+  const { status, partyId, search } = req.query;
+  let results = [...db.serviceJobs];
+  if (status && status !== 'all') results = results.filter(j => j.status === status);
+  if (partyId) results = results.filter(j => j.partyId === partyId);
+  if (search) {
+    const q = (search as string).toLowerCase();
+    results = results.filter(j =>
+      (j.partyName || '').toLowerCase().includes(q) ||
+      j.jobIdNumber.toLowerCase().includes(q) ||
+      j.workDescription.toLowerCase().includes(q)
+    );
+  }
+  results.sort((a, b) => new Date(b.scheduledDate).getTime() - new Date(a.scheduledDate).getTime());
+  return res.json({ serviceJobs: results, total: results.length });
+});
+
+app.post('/api/v1/service-jobs', (req: Request, res: Response) => {
+  const currentUser = extractUserFromHeader(req) || db.users[0];
+  const { partyId, jobType, scheduledDate, workDescription } = req.body;
+  const party = db.parties.find(p => p.id === partyId);
+  if (!party) return sendError(res, 400, 'VALIDATION_ERROR', 'A valid customer/party is required');
+  if (!jobType || !scheduledDate || !workDescription) {
+    return sendError(res, 400, 'VALIDATION_ERROR', 'Job type, scheduled date, and work description are required');
+  }
+  const equipmentItem = db.equipment.find(e => e.id === req.body.equipmentId);
+
+  const newJob: ServiceJob = {
+    id: 'svc-' + Date.now(),
+    jobIdNumber: db.nextSequence('SVC', db.serviceJobs.length),
+    partyId: party.id,
+    partyName: party.name,
+    equipmentId: equipmentItem?.id,
+    equipmentName: equipmentItem?.equipmentName,
+    jobType,
+    status: 'scheduled',
+    scheduledDate,
+    assignedToId: req.body.assignedToId || currentUser.id,
+    assignedToName: req.body.assignedToName || `${currentUser.firstName} ${currentUser.lastName}`,
+    workDescription: workDescription.trim(),
+    partsUsed: [],
+    chargeAmount: Number(req.body.chargeAmount) || 0,
+    paymentReceived: false,
+    engineerNotes: '',
+    createdById: currentUser.id,
+    createdByName: `${currentUser.firstName} ${currentUser.lastName}`,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString()
+  };
+
+  db.serviceJobs.push(newJob);
+  db.logActivity(currentUser, `scheduled service job ${newJob.jobIdNumber} for ${party.name}`, 'lead', party.id);
+  return res.status(201).json({ message: 'Service job created successfully', serviceJob: newJob });
+});
+
+app.put('/api/v1/service-jobs/:id', (req: Request, res: Response) => {
+  const currentUser = extractUserFromHeader(req) || db.users[0];
+  const job = db.serviceJobs.find(j => j.id === req.params.id);
+  if (!job) return sendError(res, 404, 'NOT_FOUND', 'Service job not found');
+
+  Object.assign(job, req.body, { id: job.id, updatedAt: new Date().toISOString() });
+
+  if (job.status === 'completed' && job.equipmentId) {
+    const equipmentItem = db.equipment.find(e => e.id === job.equipmentId);
+    if (equipmentItem) {
+      equipmentItem.lastServiceDate = job.completedDate || new Date().toISOString();
+      if (equipmentItem.serviceFrequencyDays) {
+        const next = new Date(equipmentItem.lastServiceDate);
+        next.setDate(next.getDate() + equipmentItem.serviceFrequencyDays);
+        equipmentItem.nextDueDate = next.toISOString();
+      }
+    }
+  }
+
+  db.logActivity(currentUser, `updated service job ${job.jobIdNumber}`, 'lead', job.partyId);
+  return res.json({ message: 'Service job updated successfully', serviceJob: job });
+});
+
+app.delete('/api/v1/service-jobs/:id', (req: Request, res: Response) => {
+  const idx = db.serviceJobs.findIndex(j => j.id === req.params.id);
+  if (idx === -1) return sendError(res, 404, 'NOT_FOUND', 'Service job not found');
+  db.serviceJobs.splice(idx, 1);
+  return res.json({ message: 'Service job deleted successfully' });
+});
+
+// ==========================================
+// 4D. QUOTATION MAKER ENDPOINTS
+// ==========================================
+
+function computeQuotationTotals(items: any[]) {
+  let subtotal = 0;
+  let totalDiscount = 0;
+  let totalTax = 0;
+
+  const computedItems = items.map((item: any) => {
+    const qty = Number(item.quantity) || 0;
+    const rate = Number(item.rate) || 0;
+    const discountPercent = Number(item.discountPercent) || 0;
+    const taxPercent = Number(item.taxPercent) || 0;
+
+    const lineBase = qty * rate;
+    const lineDiscount = lineBase * (discountPercent / 100);
+    const lineTaxable = lineBase - lineDiscount;
+    const lineTax = lineTaxable * (taxPercent / 100);
+    const lineAmount = lineTaxable + lineTax;
+
+    subtotal += lineBase;
+    totalDiscount += lineDiscount;
+    totalTax += lineTax;
+
+    return {
+      id: item.id || 'item-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6),
+      productId: item.productId,
+      description: item.description,
+      hsnCode: item.hsnCode || '',
+      quantity: qty,
+      unit: item.unit || 'Unit',
+      rate,
+      discountPercent,
+      taxPercent,
+      amount: Number(lineAmount.toFixed(2))
+    };
+  });
+
+  const grandTotal = subtotal - totalDiscount + totalTax;
+
+  return {
+    items: computedItems,
+    subtotal: Number(subtotal.toFixed(2)),
+    totalDiscount: Number(totalDiscount.toFixed(2)),
+    totalTax: Number(totalTax.toFixed(2)),
+    grandTotal: Number(grandTotal.toFixed(2))
+  };
+}
+
+app.get('/api/v1/quotations', (req: Request, res: Response) => {
+  const { status, partyId, search } = req.query;
+  let results = [...db.quotations];
+  if (status && status !== 'all') results = results.filter(q => q.status === status);
+  if (partyId) results = results.filter(q => q.partyId === partyId);
+  if (search) {
+    const q = (search as string).toLowerCase();
+    results = results.filter(item =>
+      item.partyName.toLowerCase().includes(q) ||
+      item.quotationNumber.toLowerCase().includes(q)
+    );
+  }
+  results.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+  return res.json({ quotations: results, total: results.length });
+});
+
+app.get('/api/v1/quotations/:id', (req: Request, res: Response) => {
+  const quotation = db.quotations.find(q => q.id === req.params.id);
+  if (!quotation) return sendError(res, 404, 'NOT_FOUND', 'Quotation not found');
+  return res.json({ quotation });
+});
+
+app.post('/api/v1/quotations', (req: Request, res: Response) => {
+  const currentUser = extractUserFromHeader(req) || db.users[0];
+  const { partyId, items, validUntil } = req.body;
+
+  const party = db.parties.find(p => p.id === partyId);
+  if (!party) return sendError(res, 400, 'VALIDATION_ERROR', 'A valid customer is required');
+  if (!Array.isArray(items) || items.length === 0) {
+    return sendError(res, 400, 'VALIDATION_ERROR', 'At least one line item is required');
+  }
+
+  const totals = computeQuotationTotals(items);
+  const now = new Date().toISOString();
+  const year = new Date().getFullYear();
+
+  const newQuotation: Quotation = {
+    id: 'qtn-' + Date.now(),
+    quotationNumber: `QTN-${year}-${String(db.quotations.length + 1).padStart(4, '0')}`,
+    partyId: party.id,
+    partyName: party.name,
+    partyPhone: party.phone,
+    partyAddress: party.billingAddress,
+    partyGstin: party.gstin,
+    quotationDate: req.body.quotationDate || now,
+    validUntil: validUntil || now,
+    status: 'draft',
+    ...totals,
+    termsAndConditions: req.body.termsAndConditions || 'Payment: 50% advance, balance on completion. Prices valid as per quoted validity period. Transportation & installation charges extra unless specified.',
+    notes: req.body.notes || '',
+    createdById: currentUser.id,
+    createdByName: `${currentUser.firstName} ${currentUser.lastName}`,
+    createdAt: now,
+    updatedAt: now
+  };
+
+  db.quotations.push(newQuotation);
+  db.logActivity(currentUser, `created quotation ${newQuotation.quotationNumber} for ${party.name}`, 'lead', party.id);
+  return res.status(201).json({ message: 'Quotation created successfully', quotation: newQuotation });
+});
+
+app.put('/api/v1/quotations/:id', (req: Request, res: Response) => {
+  const currentUser = extractUserFromHeader(req) || db.users[0];
+  const quotation = db.quotations.find(q => q.id === req.params.id);
+  if (!quotation) return sendError(res, 404, 'NOT_FOUND', 'Quotation not found');
+
+  if (req.body.items) {
+    const totals = computeQuotationTotals(req.body.items);
+    Object.assign(quotation, totals);
+  }
+
+  const { items, ...rest } = req.body;
+  Object.assign(quotation, rest, { id: quotation.id, updatedAt: new Date().toISOString() });
+
+  db.logActivity(currentUser, `updated quotation ${quotation.quotationNumber}`, 'lead', quotation.partyId);
+  return res.json({ message: 'Quotation updated successfully', quotation });
+});
+
+app.patch('/api/v1/quotations/:id/status', (req: Request, res: Response) => {
+  const currentUser = extractUserFromHeader(req) || db.users[0];
+  const quotation = db.quotations.find(q => q.id === req.params.id);
+  if (!quotation) return sendError(res, 404, 'NOT_FOUND', 'Quotation not found');
+  quotation.status = req.body.status;
+  quotation.updatedAt = new Date().toISOString();
+  db.logActivity(currentUser, `marked quotation ${quotation.quotationNumber} as ${quotation.status}`, 'lead', quotation.partyId);
+  return res.json({ message: 'Quotation status updated', quotation });
+});
+
+app.delete('/api/v1/quotations/:id', (req: Request, res: Response) => {
+  const idx = db.quotations.findIndex(q => q.id === req.params.id);
+  if (idx === -1) return sendError(res, 404, 'NOT_FOUND', 'Quotation not found');
+  db.quotations.splice(idx, 1);
+  return res.json({ message: 'Quotation deleted successfully' });
 });
 
 // ==========================================

@@ -216,6 +216,124 @@ export interface LeadImportRecord {
   importedAt: string;
 }
 
+export type PartyType = 'customer' | 'supplier';
+
+export interface Party {
+  id: string;
+  partyIdNumber: string; // e.g. CUST-001
+  partyType: PartyType;
+  name: string;
+  contactPerson?: string;
+  phone: string;
+  email?: string;
+  gstin?: string;
+  panNumber?: string;
+  billingAddress: string;
+  shippingAddress?: string;
+  city: string;
+  state: string;
+  postalCode?: string;
+  openingBalance: number;
+  balanceType: 'to_collect' | 'to_pay';
+  notes?: string;
+  status: 'active' | 'inactive';
+  createdById: string;
+  createdByName?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type EquipmentCategory = 'STP' | 'ETP' | 'RO Plant' | 'WTP' | 'Softener' | 'Pump System' | 'Other';
+
+export interface CustomerEquipment {
+  id: string;
+  partyId: string;
+  equipmentName: string;
+  category: EquipmentCategory;
+  make?: string;
+  model?: string;
+  capacity?: string;
+  serialNumber?: string;
+  installationDate?: string;
+  warrantyExpiryDate?: string;
+  amcActive: boolean;
+  amcStartDate?: string;
+  amcEndDate?: string;
+  serviceFrequencyDays?: number;
+  lastServiceDate?: string;
+  nextDueDate?: string;
+  location?: string;
+  notes?: string;
+  createdAt: string;
+}
+
+export type ServiceJobStatus = 'scheduled' | 'in_progress' | 'completed' | 'cancelled';
+export type ServiceJobType = 'amc_routine' | 'breakdown' | 'installation' | 'inspection' | 'chemical_dosing';
+
+export interface ServiceJob {
+  id: string;
+  jobIdNumber: string; // e.g. SVC-001
+  partyId: string;
+  partyName?: string;
+  equipmentId?: string;
+  equipmentName?: string;
+  jobType: ServiceJobType;
+  status: ServiceJobStatus;
+  scheduledDate: string;
+  completedDate?: string;
+  assignedToId?: string;
+  assignedToName?: string;
+  workDescription: string;
+  partsUsed?: { productId: string; productName: string; quantity: number; cost: number }[];
+  chargeAmount: number;
+  paymentReceived: boolean;
+  customerSignature?: string;
+  engineerNotes?: string;
+  createdById: string;
+  createdByName?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type QuotationStatus = 'draft' | 'sent' | 'accepted' | 'rejected' | 'expired' | 'converted';
+
+export interface QuotationLineItem {
+  id: string;
+  productId?: string;
+  description: string;
+  hsnCode?: string;
+  quantity: number;
+  unit: string;
+  rate: number;
+  discountPercent: number;
+  taxPercent: number;
+  amount: number; // computed line total incl. tax
+}
+
+export interface Quotation {
+  id: string;
+  quotationNumber: string; // e.g. QTN-2026-0001
+  partyId: string;
+  partyName: string;
+  partyPhone?: string;
+  partyAddress?: string;
+  partyGstin?: string;
+  quotationDate: string;
+  validUntil: string;
+  status: QuotationStatus;
+  items: QuotationLineItem[];
+  subtotal: number;
+  totalDiscount: number;
+  totalTax: number;
+  grandTotal: number;
+  termsAndConditions?: string;
+  notes?: string;
+  createdById: string;
+  createdByName?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface DashboardKPIData {
   totalLeads: number;
   totalLeadsChange: number; // percentage e.g. 12

@@ -10,28 +10,33 @@ import React from 'react';
   Shield,
   Droplets,
   Wrench,
-  FileSpreadsheet
+  FileSpreadsheet,
+  FileText,
+  X
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 
 interface SidebarProps {
-  currentTab: string;
+  activeTab: string;
   onSelectTab: (tab: string) => void;
-  onOpenCreateLead: () => void;
-  onOpenImportModal: () => void;
+  mobileOpen?: boolean;
+  onCloseMobile?: () => void;
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({
-  currentTab,
+  activeTab: currentTab,
   onSelectTab,
-  onOpenCreateLead,
-  onOpenImportModal
+  mobileOpen,
+  onCloseMobile
 }) => {
   const { user } = useAuth();
 
   const navItems = [
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, permission: 'dashboard' },
     { id: 'leads', label: 'Leads Management', icon: Users, badge: 'Live', permission: 'leads' },
+    { id: 'customers', label: 'Customers', icon: Users, permission: 'customers' },
+    { id: 'quotations', label: 'Quotation Maker', icon: FileText, permission: 'quotations' },
+    { id: 'service', label: 'Service & AMC Jobs', icon: Wrench, permission: 'service' },
     { id: 'employees', label: 'Employees & Teams', icon: Briefcase, permission: 'employees' },
     { id: 'inventory', label: 'Inventory & Spares', icon: Package, permission: 'inventory' },
     { id: 'analytics', label: 'Analytics & Reports', icon: BarChart3, permission: 'analytics' },
@@ -39,7 +44,16 @@ export const Sidebar: React.FC<SidebarProps> = ({
   ];
 
   return (
-    <aside className="w-64 bg-white border-r border-gray-200 flex flex-col shrink-0 h-screen sticky top-0">
+    <>
+    {mobileOpen && (
+      <div className="fixed inset-0 bg-black/40 z-40 lg:hidden" onClick={onCloseMobile}></div>
+    )}
+    <aside className={`w-64 bg-white border-r border-gray-200 flex flex-col shrink-0 h-screen sticky top-0 z-50 fixed lg:static inset-y-0 left-0 transition-transform lg:translate-x-0 ${mobileOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}`}>
+      {onCloseMobile && (
+        <button onClick={onCloseMobile} className="lg:hidden absolute top-3 right-3 p-1 text-white/70 hover:text-white">
+          <X className="w-5 h-5" />
+        </button>
+      )}
       {/* Brand Header */}
       <div className="h-16 px-5 flex items-center border-b border-gray-100 space-x-3 bg-gradient-to-r from-blue-900 via-[#00288e] to-blue-950 text-white">
         <div className="w-9 h-9 rounded-lg bg-white/10 backdrop-blur-xs flex items-center justify-center ring-1 ring-white/20">
@@ -53,27 +67,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
             Engineering Solutions
           </p>
         </div>
-      </div>
-
-      {/* Action Buttons */}
-      <div className="p-4 space-y-2">
-        <button
-          id="sidebar-create-lead-btn"
-          onClick={onOpenCreateLead}
-          className="w-full py-2.5 px-4 bg-[#00288e] hover:bg-blue-800 text-white rounded-lg font-semibold text-xs flex items-center justify-center space-x-2 shadow-sm shadow-blue-900/20 active:scale-[0.98] transition-all"
-        >
-          <Plus className="w-4 h-4" />
-          <span>+ Create New Lead</span>
-        </button>
-
-        <button
-          id="sidebar-import-leads-btn"
-          onClick={onOpenImportModal}
-          className="w-full py-1.5 px-3 bg-gray-50 hover:bg-gray-100 text-gray-700 border border-gray-200 rounded-lg font-medium text-xs flex items-center justify-center space-x-1.5 transition-colors"
-        >
-          <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-600" />
-          <span>Import Leads (CSV)</span>
-        </button>
       </div>
 
       {/* Navigation List */}
@@ -127,5 +120,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
         </div>
       </div>
     </aside>
+    </>
   );
 };

@@ -13,6 +13,9 @@ import { RecordCallModal } from './components/leads/RecordCallModal';
 import { InventoryView } from './components/inventory/InventoryView';
 import { EmployeesView } from './components/employees/EmployeesView';
 import { SettingsAuditView } from './components/settings/SettingsAuditView';
+import { CustomersView } from './components/customers/CustomersView';
+import { QuotationsView } from './components/quotations/QuotationsView';
+import { ServiceJobsView } from './components/service/ServiceJobsView';
 import { Lead } from './types';
 
 const MainLayout: React.FC = () => {
@@ -108,6 +111,12 @@ const MainLayout: React.FC = () => {
               onRecordCall={lead => setRecordingCallLead(lead)}
             />
           )}
+
+          {activeTab === 'customers' && <CustomersView />}
+
+          {activeTab === 'quotations' && <QuotationsView />}
+
+          {activeTab === 'service' && <ServiceJobsView />}
 
           {activeTab === 'inventory' && <InventoryView />}
 
