@@ -13,7 +13,13 @@ import {
   LeadImportRecord,
   Role,
   DashboardKPIData,
-  UserRole
+  UserRole,
+  Party,
+  CustomerEquipment,
+  ServiceJob,
+  Quotation,
+  Invoice,
+  PaymentIn
 } from '../src/types';
 
 // In-Memory Database Store for Om Jyoti Engineering CRM
@@ -92,6 +98,12 @@ export class Database {
   leadNotes: LeadNote[] = [];
   leadHistory: LeadHistoryItem[] = [];
   leadImports: LeadImportRecord[] = [];
+  parties: Party[] = [];
+  equipment: CustomerEquipment[] = [];
+  serviceJobs: ServiceJob[] = [];
+  quotations: Quotation[] = [];
+  invoices: Invoice[] = [];
+  payments: PaymentIn[] = [];
 
   activityLogs: ActivityLog[] = [
     {
@@ -211,6 +223,10 @@ export class Database {
       recentLeads: this.leads.slice(0, 5),
       recentActivities: this.activityLogs.slice(0, 8)
     };
+  }
+
+  nextSequence(prefix: string, currentCount: number): string {
+    return `${prefix}-${String(currentCount + 1).padStart(4, '0')}`;
   }
 
   getLowStockAlerts(): LowStockAlert[] {

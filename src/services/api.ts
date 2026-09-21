@@ -14,7 +14,13 @@ import {
   LeadImportRecord,
   DashboardKPIData,
   Role,
-  Team
+  Team,
+  Party,
+  CustomerEquipment,
+  ServiceJob,
+  Quotation,
+  Invoice,
+  PaymentIn
 } from '../types';
 
 let authToken: string | null = localStorage.getItem('omjyoti_auth_token') || 'usr-admin-1';
@@ -315,6 +321,145 @@ export const api = {
       method: 'POST',
       body: JSON.stringify(supplierData)
     });
+  },
+
+  // Parties (Customers & Suppliers)
+  async getParties(params?: { partyType?: string; status?: string; search?: string }): Promise<{ parties: Party[]; total: number }> {
+    const searchParams = new URLSearchParams();
+    if (params?.partyType) searchParams.set('partyType', params.partyType);
+    if (params?.status) searchParams.set('status', params.status);
+    if (params?.search) searchParams.set('search', params.search);
+    const query = searchParams.toString();
+    return request(`/api/v1/parties${query ? '?' + query : ''}`);
+  },
+
+  async getPartyById(id: string): Promise<{ party: Party; equipment: CustomerEquipment[]; serviceJobs: ServiceJob[]; quotations: Quotation[] }> {
+    return request(`/api/v1/parties/${id}`);
+  },
+
+  async createParty(data: Partial<Party>): Promise<{ message: string; party: Party }> {
+    return request('/api/v1/parties', { method: 'POST', body: JSON.stringify(data) });
+  },
+
+  async updateParty(id: string, data: Partial<Party>): Promise<{ message: string; party: Party }> {
+    return request(`/api/v1/parties/${id}`, { method: 'PUT', body: JSON.stringify(data) });
+  },
+
+  async deleteParty(id: string): Promise<{ message: string }> {
+    return request(`/api/v1/parties/${id}`, { method: 'DELETE' });
+  },
+
+  // Customer Equipment
+  async addEquipment(partyId: string, data: Partial<CustomerEquipment>): Promise<{ message: string; equipment: CustomerEquipment }> {
+    return request(`/api/v1/parties/${partyId}/equipment`, { method: 'POST', body: JSON.stringify(data) });
+  },
+
+  async updateEquipment(id: string, data: Partial<CustomerEquipment>): Promise<{ message: string; equipment: CustomerEquipment }> {
+    return request(`/api/v1/equipment/${id}`, { method: 'PUT', body: JSON.stringify(data) });
+  },
+
+  async deleteEquipment(id: string): Promise<{ message: string }> {
+    return request(`/api/v1/equipment/${id}`, { method: 'DELETE' });
+  },
+
+  // Service Jobs
+  async getServiceJobs(params?: { status?: string; partyId?: string; search?: string }): Promise<{ serviceJobs: ServiceJob[]; total: number }> {
+    const searchParams = new URLSearchParams();
+    if (params?.status) searchParams.set('status', params.status);
+    if (params?.partyId) searchParams.set('partyId', params.partyId);
+    if (params?.search) searchParams.set('search', params.search);
+    const query = searchParams.toString();
+    return request(`/api/v1/service-jobs${query ? '?' + query : ''}`);
+  },
+
+  async createServiceJob(data: Partial<ServiceJob>): Promise<{ message: string; serviceJob: ServiceJob }> {
+    return request('/api/v1/service-jobs', { method: 'POST', body: JSON.stringify(data) });
+  },
+
+  async updateServiceJob(id: string, data: Partial<ServiceJob>): Promise<{ message: string; serviceJob: ServiceJob }> {
+    return request(`/api/v1/service-jobs/${id}`, { method: 'PUT', body: JSON.stringify(data) });
+  },
+
+  async deleteServiceJob(id: string): Promise<{ message: string }> {
+    return request(`/api/v1/service-jobs/${id}`, { method: 'DELETE' });
+  },
+
+  // Quotations
+  async getQuotations(params?: { status?: string; partyId?: string; search?: string }): Promise<{ quotations: Quotation[]; total: number }> {
+    const searchParams = new URLSearchParams();
+    if (params?.status) searchParams.set('status', params.status);
+    if (params?.partyId) searchParams.set('partyId', params.partyId);
+    if (params?.search) searchParams.set('search', params.search);
+    const query = searchParams.toString();
+    return request(`/api/v1/quotations${query ? '?' + query : ''}`);
+  },
+
+  async getQuotationById(id: string): Promise<{ quotation: Quotation }> {
+    return request(`/api/v1/quotations/${id}`);
+  },
+
+  async createQuotation(data: Partial<Quotation>): Promise<{ message: string; quotation: Quotation }> {
+    return request('/api/v1/quotations', { method: 'POST', body: JSON.stringify(data) });
+  },
+
+  async updateQuotation(id: string, data: Partial<Quotation>): Promise<{ message: string; quotation: Quotation }> {
+    return request(`/api/v1/quotations/${id}`, { method: 'PUT', body: JSON.stringify(data) });
+  },
+
+  async updateQuotationStatus(id: string, status: string): Promise<{ message: string; quotation: Quotation }> {
+    return request(`/api/v1/quotations/${id}/status`, { method: 'PATCH', body: JSON.stringify({ status }) });
+  },
+
+  async deleteQuotation(id: string): Promise<{ message: string }> {
+    return request(`/api/v1/quotations/${id}`, { method: 'DELETE' });
+  },
+
+  // Sales Invoices
+  async getInvoices(params?: { status?: string; partyId?: string; search?: string }): Promise<{ invoices: Invoice[]; total: number }> {
+    const searchParams = new URLSearchParams();
+    if (params?.status) searchParams.set('status', params.status);
+    if (params?.partyId) searchParams.set('partyId', params.partyId);
+    if (params?.search) searchParams.set('search', params.search);
+    const query = searchParams.toString();
+    return request(`/api/v1/invoices${query ? '?' + query : ''}`);
+  },
+
+  async getInvoiceById(id: string): Promise<{ invoice: Invoice; payments: PaymentIn[] }> {
+    return request(`/api/v1/invoices/${id}`);
+  },
+
+  async createInvoice(data: Partial<Invoice>): Promise<{ message: string; invoice: Invoice }> {
+    return request('/api/v1/invoices', { method: 'POST', body: JSON.stringify(data) });
+  },
+
+  async updateInvoice(id: string, data: Partial<Invoice>): Promise<{ message: string; invoice: Invoice }> {
+    return request(`/api/v1/invoices/${id}`, { method: 'PUT', body: JSON.stringify(data) });
+  },
+
+  async updateInvoiceStatus(id: string, status: string): Promise<{ message: string; invoice: Invoice }> {
+    return request(`/api/v1/invoices/${id}/status`, { method: 'PATCH', body: JSON.stringify({ status }) });
+  },
+
+  async deleteInvoice(id: string): Promise<{ message: string }> {
+    return request(`/api/v1/invoices/${id}`, { method: 'DELETE' });
+  },
+
+  // Payment In
+  async getPayments(params?: { partyId?: string; invoiceId?: string; search?: string }): Promise<{ payments: PaymentIn[]; total: number }> {
+    const searchParams = new URLSearchParams();
+    if (params?.partyId) searchParams.set('partyId', params.partyId);
+    if (params?.invoiceId) searchParams.set('invoiceId', params.invoiceId);
+    if (params?.search) searchParams.set('search', params.search);
+    const query = searchParams.toString();
+    return request(`/api/v1/payments${query ? '?' + query : ''}`);
+  },
+
+  async createPayment(data: Partial<PaymentIn>): Promise<{ message: string; payment: PaymentIn; invoice?: Invoice }> {
+    return request('/api/v1/payments', { method: 'POST', body: JSON.stringify(data) });
+  },
+
+  async deletePayment(id: string): Promise<{ message: string }> {
+    return request(`/api/v1/payments/${id}`, { method: 'DELETE' });
   },
 
   // Dashboard & Analytics
