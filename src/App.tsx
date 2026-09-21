@@ -16,6 +16,9 @@ import { SettingsAuditView } from './components/settings/SettingsAuditView';
 import { CustomersView } from './components/customers/CustomersView';
 import { QuotationsView } from './components/quotations/QuotationsView';
 import { InvoicesView } from './components/invoices/InvoicesView';
+import { DeliveryChallanView } from './components/challans/DeliveryChallanView';
+import { PurchasesView } from './components/purchases/PurchasesView';
+import { ExpensesView } from './components/expenses/ExpensesView';
 import { ServiceJobsView } from './components/service/ServiceJobsView';
 import { Lead } from './types';
 
@@ -118,6 +121,12 @@ const MainLayout: React.FC = () => {
           {activeTab === 'quotations' && <QuotationsView />}
 
           {activeTab === 'invoices' && <InvoicesView />}
+
+          {activeTab === 'challans' && <DeliveryChallanView />}
+
+          {activeTab === 'purchases' && <PurchasesView />}
+
+          {activeTab === 'expenses' && <ExpensesView />}
 
           {activeTab === 'service' && <ServiceJobsView />}
 

@@ -19,7 +19,10 @@ import {
   ServiceJob,
   Quotation,
   Invoice,
-  PaymentIn
+  PaymentIn,
+  DeliveryChallan,
+  PurchaseBill,
+  Expense
 } from '../src/types';
 
 // In-Memory Database Store for Om Jyoti Engineering CRM
@@ -104,6 +107,9 @@ export class Database {
   quotations: Quotation[] = [];
   invoices: Invoice[] = [];
   payments: PaymentIn[] = [];
+  deliveryChallans: DeliveryChallan[] = [];
+  purchaseBills: PurchaseBill[] = [];
+  expenses: Expense[] = [];
 
   activityLogs: ActivityLog[] = [
     {

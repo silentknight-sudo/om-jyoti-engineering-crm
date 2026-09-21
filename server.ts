@@ -2,7 +2,7 @@ import express, { Request, Response, NextFunction } from 'express';
 import path from 'path';
 import { createServer as createViteServer } from 'vite';
 import { db } from './server/db';
-import { User, Lead, LeadStatus, MovementType, Party, CustomerEquipment, ServiceJob, Quotation, Invoice, PaymentIn } from './src/types';
+import { User, Lead, LeadStatus, MovementType, Party, CustomerEquipment, ServiceJob, Quotation, Invoice, PaymentIn, DeliveryChallan, PurchaseBill, Expense } from './src/types';
 
 const app = express();
 const PORT = 3000;
@@ -1642,6 +1642,260 @@ app.delete('/api/v1/payments/:id', (req: Request, res: Response) => {
   }
 
   return res.json({ message: 'Payment deleted successfully' });
+});
+
+// ==========================================
+// 4G. DELIVERY CHALLAN ENDPOINTS
+// ==========================================
+
+app.get('/api/v1/delivery-challans', (req: Request, res: Response) => {
+  const { status, partyId, search } = req.query;
+  let results = [...db.deliveryChallans];
+  if (status && status !== 'all') results = results.filter(c => c.status === status);
+  if (partyId) results = results.filter(c => c.partyId === partyId);
+  if (search) {
+    const q = (search as string).toLowerCase();
+    results = results.filter(c => c.partyName.toLowerCase().includes(q) || c.challanNumber.toLowerCase().includes(q));
+  }
+  results.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+  return res.json({ deliveryChallans: results, total: results.length });
+});
+
+app.post('/api/v1/delivery-challans', (req: Request, res: Response) => {
+  const currentUser = extractUserFromHeader(req) || db.users[0];
+  const { partyId, items } = req.body;
+  const party = db.parties.find(p => p.id === partyId);
+  if (!party) return sendError(res, 400, 'VALIDATION_ERROR', 'A valid customer is required');
+  if (!Array.isArray(items) || items.length === 0) return sendError(res, 400, 'VALIDATION_ERROR', 'At least one item is required');
+
+  const now = new Date().toISOString();
+  const year = new Date().getFullYear();
+
+  const newChallan: DeliveryChallan = {
+    id: 'dc-' + Date.now(),
+    challanNumber: `DC-${year}-${String(db.deliveryChallans.length + 1).padStart(4, '0')}`,
+    partyId: party.id,
+    partyName: party.name,
+    partyAddress: party.shippingAddress || party.billingAddress,
+    challanDate: req.body.challanDate || now,
+    status: 'pending',
+    items: items.map((it: any) => ({
+      id: 'dci-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6),
+      productId: it.productId,
+      description: it.description,
+      quantity: Number(it.quantity) || 0,
+      unit: it.unit || 'Unit'
+    })),
+    vehicleNumber: req.body.vehicleNumber || '',
+    transportMode: req.body.transportMode || 'Road',
+    notes: req.body.notes || '',
+    createdById: currentUser.id,
+    createdByName: `${currentUser.firstName} ${currentUser.lastName}`,
+    createdAt: now,
+    updatedAt: now
+  };
+
+  db.deliveryChallans.push(newChallan);
+  db.logActivity(currentUser, `created delivery challan ${newChallan.challanNumber} for ${party.name}`, 'lead', party.id);
+  return res.status(201).json({ message: 'Delivery challan created successfully', deliveryChallan: newChallan });
+});
+
+app.patch('/api/v1/delivery-challans/:id/status', (req: Request, res: Response) => {
+  const currentUser = extractUserFromHeader(req) || db.users[0];
+  const challan = db.deliveryChallans.find(c => c.id === req.params.id);
+  if (!challan) return sendError(res, 404, 'NOT_FOUND', 'Delivery challan not found');
+  challan.status = req.body.status;
+  challan.updatedAt = new Date().toISOString();
+  db.logActivity(currentUser, `marked delivery challan ${challan.challanNumber} as ${challan.status}`, 'lead', challan.partyId);
+  return res.json({ message: 'Delivery challan status updated', deliveryChallan: challan });
+});
+
+app.delete('/api/v1/delivery-challans/:id', (req: Request, res: Response) => {
+  const idx = db.deliveryChallans.findIndex(c => c.id === req.params.id);
+  if (idx === -1) return sendError(res, 404, 'NOT_FOUND', 'Delivery challan not found');
+  db.deliveryChallans.splice(idx, 1);
+  return res.json({ message: 'Delivery challan deleted successfully' });
+});
+
+// ==========================================
+// 4H. PURCHASE BILLS ENDPOINTS
+// ==========================================
+
+function computePurchaseStatus(bill: PurchaseBill): PurchaseBillStatusType {
+  if (bill.amountPaid >= bill.grandTotal && bill.grandTotal > 0) return 'paid';
+  if (bill.amountPaid > 0) return 'partially_paid';
+  return 'unpaid';
+}
+type PurchaseBillStatusType = 'unpaid' | 'partially_paid' | 'paid';
+
+app.get('/api/v1/purchase-bills', (req: Request, res: Response) => {
+  const { status, supplierId, search } = req.query;
+  let results = [...db.purchaseBills];
+  if (status && status !== 'all') results = results.filter(b => b.status === status);
+  if (supplierId) results = results.filter(b => b.supplierId === supplierId);
+  if (search) {
+    const q = (search as string).toLowerCase();
+    results = results.filter(b => b.supplierName.toLowerCase().includes(q) || b.billNumber.toLowerCase().includes(q));
+  }
+  results.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+  return res.json({ purchaseBills: results, total: results.length });
+});
+
+app.post('/api/v1/purchase-bills', (req: Request, res: Response) => {
+  const currentUser = extractUserFromHeader(req) || db.users[0];
+  const { supplierId, items, dueDate } = req.body;
+  const supplier = db.suppliers.find(s => s.id === supplierId);
+  if (!supplier) return sendError(res, 400, 'VALIDATION_ERROR', 'A valid supplier is required');
+  if (!Array.isArray(items) || items.length === 0) return sendError(res, 400, 'VALIDATION_ERROR', 'At least one line item is required');
+
+  let subtotal = 0;
+  let totalTax = 0;
+  const computedItems = items.map((it: any) => {
+    const qty = Number(it.quantity) || 0;
+    const rate = Number(it.rate) || 0;
+    const taxPercent = Number(it.taxPercent) || 0;
+    const base = qty * rate;
+    const tax = base * (taxPercent / 100);
+    subtotal += base;
+    totalTax += tax;
+    return {
+      id: 'pbi-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6),
+      productId: it.productId,
+      description: it.description,
+      quantity: qty,
+      unit: it.unit || 'Unit',
+      rate,
+      taxPercent,
+      amount: Number((base + tax).toFixed(2))
+    };
+  });
+
+  const grandTotal = Number((subtotal + totalTax).toFixed(2));
+  const now = new Date().toISOString();
+  const year = new Date().getFullYear();
+
+  const newBill: PurchaseBill = {
+    id: 'pb-' + Date.now(),
+    billNumber: `PB-${year}-${String(db.purchaseBills.length + 1).padStart(4, '0')}`,
+    supplierId: supplier.id,
+    supplierName: supplier.name,
+    supplierInvoiceNumber: req.body.supplierInvoiceNumber || '',
+    billDate: req.body.billDate || now,
+    dueDate: dueDate || now,
+    status: 'unpaid',
+    items: computedItems,
+    subtotal: Number(subtotal.toFixed(2)),
+    totalTax: Number(totalTax.toFixed(2)),
+    grandTotal,
+    amountPaid: 0,
+    balanceDue: grandTotal,
+    notes: req.body.notes || '',
+    createdById: currentUser.id,
+    createdByName: `${currentUser.firstName} ${currentUser.lastName}`,
+    createdAt: now,
+    updatedAt: now
+  };
+
+  db.purchaseBills.push(newBill);
+
+  // Receive stock for matched products
+  for (const it of computedItems) {
+    if (!it.productId) continue;
+    const product = db.products.find(p => p.id === it.productId);
+    if (product) {
+      product.quantityOnHand += it.quantity;
+      product.quantityAvailable = Math.max(0, product.quantityOnHand - product.quantityReserved);
+      db.inventoryMovements.unshift({
+        id: 'mov-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6),
+        productId: product.id,
+        productName: product.name,
+        movementType: 'purchase',
+        quantityChange: it.quantity,
+        referenceId: newBill.id,
+        notes: `Received via purchase bill ${newBill.billNumber}`,
+        createdById: currentUser.id,
+        createdByName: `${currentUser.firstName} ${currentUser.lastName}`,
+        createdAt: now
+      });
+    }
+  }
+
+  db.logActivity(currentUser, `created purchase bill ${newBill.billNumber} from ${supplier.name}`, 'inventory', supplier.id);
+  return res.status(201).json({ message: 'Purchase bill created successfully', purchaseBill: newBill });
+});
+
+app.post('/api/v1/purchase-bills/:id/payments', (req: Request, res: Response) => {
+  const currentUser = extractUserFromHeader(req) || db.users[0];
+  const bill = db.purchaseBills.find(b => b.id === req.params.id);
+  if (!bill) return sendError(res, 404, 'NOT_FOUND', 'Purchase bill not found');
+  const amount = Number(req.body.amount);
+  if (!amount || amount <= 0) return sendError(res, 400, 'VALIDATION_ERROR', 'A valid payment amount is required');
+
+  bill.amountPaid = Number((bill.amountPaid + amount).toFixed(2));
+  bill.balanceDue = Math.max(0, Number((bill.grandTotal - bill.amountPaid).toFixed(2)));
+  bill.status = computePurchaseStatus(bill);
+  bill.updatedAt = new Date().toISOString();
+
+  db.logActivity(currentUser, `recorded payment of ${amount} to ${bill.supplierName} for bill ${bill.billNumber}`, 'inventory', bill.supplierId);
+  return res.json({ message: 'Payment recorded successfully', purchaseBill: bill });
+});
+
+app.delete('/api/v1/purchase-bills/:id', (req: Request, res: Response) => {
+  const idx = db.purchaseBills.findIndex(b => b.id === req.params.id);
+  if (idx === -1) return sendError(res, 404, 'NOT_FOUND', 'Purchase bill not found');
+  db.purchaseBills.splice(idx, 1);
+  return res.json({ message: 'Purchase bill deleted successfully' });
+});
+
+// ==========================================
+// 4I. EXPENSES ENDPOINTS
+// ==========================================
+
+app.get('/api/v1/expenses', (req: Request, res: Response) => {
+  const { category, search } = req.query;
+  let results = [...db.expenses];
+  if (category && category !== 'all') results = results.filter(e => e.category === category);
+  if (search) {
+    const q = (search as string).toLowerCase();
+    results = results.filter(e => e.description.toLowerCase().includes(q) || e.expenseNumber.toLowerCase().includes(q) || (e.vendorName || '').toLowerCase().includes(q));
+  }
+  results.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+  return res.json({ expenses: results, total: results.length, totalAmount: results.reduce((s, e) => s + e.amount, 0) });
+});
+
+app.post('/api/v1/expenses', (req: Request, res: Response) => {
+  const currentUser = extractUserFromHeader(req) || db.users[0];
+  const { category, description, amount } = req.body;
+  if (!category || !description || !amount) return sendError(res, 400, 'VALIDATION_ERROR', 'Category, description and amount are required');
+
+  const now = new Date().toISOString();
+  const year = new Date().getFullYear();
+
+  const newExpense: Expense = {
+    id: 'exp-' + Date.now(),
+    expenseNumber: `EXP-${year}-${String(db.expenses.length + 1).padStart(4, '0')}`,
+    category,
+    description: description.trim(),
+    amount: Number(amount),
+    expenseDate: req.body.expenseDate || now,
+    paymentMode: req.body.paymentMode || 'cash',
+    vendorName: req.body.vendorName || '',
+    referenceNumber: req.body.referenceNumber || '',
+    createdById: currentUser.id,
+    createdByName: `${currentUser.firstName} ${currentUser.lastName}`,
+    createdAt: now
+  };
+
+  db.expenses.push(newExpense);
+  db.logActivity(currentUser, `recorded expense ${newExpense.expenseNumber} (${category}) of ${newExpense.amount}`, 'system', newExpense.id);
+  return res.status(201).json({ message: 'Expense recorded successfully', expense: newExpense });
+});
+
+app.delete('/api/v1/expenses/:id', (req: Request, res: Response) => {
+  const idx = db.expenses.findIndex(e => e.id === req.params.id);
+  if (idx === -1) return sendError(res, 404, 'NOT_FOUND', 'Expense not found');
+  db.expenses.splice(idx, 1);
+  return res.json({ message: 'Expense deleted successfully' });
 });
 
 // ==========================================

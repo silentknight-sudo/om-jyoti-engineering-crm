@@ -20,7 +20,10 @@ import {
   ServiceJob,
   Quotation,
   Invoice,
-  PaymentIn
+  PaymentIn,
+  DeliveryChallan,
+  PurchaseBill,
+  Expense
 } from '../types';
 
 let authToken: string | null = localStorage.getItem('omjyoti_auth_token') || 'usr-admin-1';
@@ -460,6 +463,67 @@ export const api = {
 
   async deletePayment(id: string): Promise<{ message: string }> {
     return request(`/api/v1/payments/${id}`, { method: 'DELETE' });
+  },
+
+  // Delivery Challan
+  async getDeliveryChallans(params?: { status?: string; partyId?: string; search?: string }): Promise<{ deliveryChallans: DeliveryChallan[]; total: number }> {
+    const searchParams = new URLSearchParams();
+    if (params?.status) searchParams.set('status', params.status);
+    if (params?.partyId) searchParams.set('partyId', params.partyId);
+    if (params?.search) searchParams.set('search', params.search);
+    const query = searchParams.toString();
+    return request(`/api/v1/delivery-challans${query ? '?' + query : ''}`);
+  },
+
+  async createDeliveryChallan(data: Partial<DeliveryChallan>): Promise<{ message: string; deliveryChallan: DeliveryChallan }> {
+    return request('/api/v1/delivery-challans', { method: 'POST', body: JSON.stringify(data) });
+  },
+
+  async updateDeliveryChallanStatus(id: string, status: string): Promise<{ message: string; deliveryChallan: DeliveryChallan }> {
+    return request(`/api/v1/delivery-challans/${id}/status`, { method: 'PATCH', body: JSON.stringify({ status }) });
+  },
+
+  async deleteDeliveryChallan(id: string): Promise<{ message: string }> {
+    return request(`/api/v1/delivery-challans/${id}`, { method: 'DELETE' });
+  },
+
+  // Purchase Bills
+  async getPurchaseBills(params?: { status?: string; supplierId?: string; search?: string }): Promise<{ purchaseBills: PurchaseBill[]; total: number }> {
+    const searchParams = new URLSearchParams();
+    if (params?.status) searchParams.set('status', params.status);
+    if (params?.supplierId) searchParams.set('supplierId', params.supplierId);
+    if (params?.search) searchParams.set('search', params.search);
+    const query = searchParams.toString();
+    return request(`/api/v1/purchase-bills${query ? '?' + query : ''}`);
+  },
+
+  async createPurchaseBill(data: Partial<PurchaseBill>): Promise<{ message: string; purchaseBill: PurchaseBill }> {
+    return request('/api/v1/purchase-bills', { method: 'POST', body: JSON.stringify(data) });
+  },
+
+  async payPurchaseBill(id: string, amount: number): Promise<{ message: string; purchaseBill: PurchaseBill }> {
+    return request(`/api/v1/purchase-bills/${id}/payments`, { method: 'POST', body: JSON.stringify({ amount }) });
+  },
+
+  async deletePurchaseBill(id: string): Promise<{ message: string }> {
+    return request(`/api/v1/purchase-bills/${id}`, { method: 'DELETE' });
+  },
+
+  // Expenses
+  async getExpenses(params?: { category?: string; search?: string }): Promise<{ expenses: Expense[]; total: number; totalAmount: number }> {
+    const searchParams = new URLSearchParams();
+    if (params?.category) searchParams.set('category', params.category);
+    if (params?.search) searchParams.set('search', params.search);
+    const query = searchParams.toString();
+    return request(`/api/v1/expenses${query ? '?' + query : ''}`);
+  },
+
+  async createExpense(data: Partial<Expense>): Promise<{ message: string; expense: Expense }> {
+    return request('/api/v1/expenses', { method: 'POST', body: JSON.stringify(data) });
+  },
+
+  async deleteExpense(id: string): Promise<{ message: string }> {
+    return request(`/api/v1/expenses/${id}`, { method: 'DELETE' });
   },
 
   // Dashboard & Analytics
