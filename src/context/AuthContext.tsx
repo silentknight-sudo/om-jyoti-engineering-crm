@@ -39,24 +39,21 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     loadUser();
   }, []);
 
+  // Deliberately does NOT touch the global `isLoading` flag. That flag gates
+  // whether MainLayout renders LoginView at all (`if (isLoading) return
+  // <spinner/>`), so toggling it here would unmount LoginView mid-submit; on
+  // a failed login the component remounts fresh, silently discarding the
+  // error state the catch block in LoginView just set — the user just sees
+  // the form reset with no explanation. The submit button's own spinner
+  // (LoginView's local isLoading) is enough.
   const login = async (email: string, pass: string) => {
-    setIsLoading(true);
-    try {
-      const res = await api.login(email, pass);
-      setUser(res.user);
-    } finally {
-      setIsLoading(false);
-    }
+    const res = await api.login(email, pass);
+    setUser(res.user);
   };
 
   const logout = async () => {
-    setIsLoading(true);
-    try {
-      await api.logout();
-      setUser(null);
-    } finally {
-      setIsLoading(false);
-    }
+    await api.logout();
+    setUser(null);
   };
 
   const hasPermission = (permission: string): boolean => {
