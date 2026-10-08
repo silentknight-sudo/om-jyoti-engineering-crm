@@ -395,6 +395,89 @@ export interface PaymentIn {
   createdAt: string;
 }
 
+export interface DeliveryChallanItem {
+  id: string;
+  productId?: string;
+  description: string;
+  quantity: number;
+  unit: string;
+}
+
+export type DeliveryChallanStatus = 'pending' | 'delivered' | 'converted' | 'cancelled';
+
+export interface DeliveryChallan {
+  id: string;
+  challanNumber: string; // e.g. DC-2026-0001
+  partyId: string;
+  partyName: string;
+  partyAddress?: string;
+  invoiceId?: string;
+  challanDate: string;
+  status: DeliveryChallanStatus;
+  items: DeliveryChallanItem[];
+  vehicleNumber?: string;
+  transportMode?: string;
+  notes?: string;
+  createdById: string;
+  createdByName?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type PurchaseBillStatus = 'unpaid' | 'partially_paid' | 'paid';
+
+export interface PurchaseBillItem {
+  id: string;
+  productId?: string;
+  description: string;
+  quantity: number;
+  unit: string;
+  rate: number;
+  taxPercent: number;
+  amount: number;
+}
+
+export interface PurchaseBill {
+  id: string;
+  billNumber: string; // e.g. PB-2026-0001
+  supplierId: string;
+  supplierName: string;
+  supplierInvoiceNumber?: string;
+  billDate: string;
+  dueDate: string;
+  status: PurchaseBillStatus;
+  items: PurchaseBillItem[];
+  subtotal: number;
+  totalTax: number;
+  grandTotal: number;
+  amountPaid: number;
+  balanceDue: number;
+  notes?: string;
+  createdById: string;
+  createdByName?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type ExpenseCategory = 'fuel' | 'travel' | 'office_supplies' | 'salaries' | 'rent' | 'utilities' | 'equipment_repair' | 'chemicals' | 'transport' | 'other';
+export type ExpensePaymentMode = 'cash' | 'bank_transfer' | 'upi' | 'cheque' | 'card' | 'other';
+
+export interface Expense {
+  id: string;
+  expenseNumber: string; // e.g. EXP-2026-0001
+  category: ExpenseCategory;
+  description: string;
+  amount: number;
+  expenseDate: string;
+  paymentMode: ExpensePaymentMode;
+  vendorName?: string;
+  referenceNumber?: string;
+  attachmentUrl?: string;
+  createdById: string;
+  createdByName?: string;
+  createdAt: string;
+}
+
 export interface DashboardKPIData {
   totalLeads: number;
   totalLeadsChange: number; // percentage e.g. 12

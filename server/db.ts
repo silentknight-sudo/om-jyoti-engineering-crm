@@ -19,7 +19,10 @@ import {
   ServiceJob,
   Quotation,
   Invoice,
-  PaymentIn
+  PaymentIn,
+  DeliveryChallan,
+  PurchaseBill,
+  Expense
 } from '../src/types';
 
 // In-Memory Database Store for Om Jyoti Engineering CRM
@@ -104,6 +107,9 @@ export class Database {
   quotations: Quotation[] = [];
   invoices: Invoice[] = [];
   payments: PaymentIn[] = [];
+  deliveryChallans: DeliveryChallan[] = [];
+  purchaseBills: PurchaseBill[] = [];
+  expenses: Expense[] = [];
 
   activityLogs: ActivityLog[] = [
     {
@@ -126,6 +132,9 @@ export class Database {
     company_email: 'contact@omjyotiengg.com',
     company_phone: '+91 120 456 7890',
     company_address: 'Plot No. 44, Sector 63, Noida, Uttar Pradesh - 201301',
+    company_gstin: '',
+    company_pan: '',
+    company_msme_udyam: '',
     currency_symbol: '₹',
     currency_code: 'INR',
     commission_rates: {

@@ -16,6 +16,9 @@ import { SettingsAuditView } from './components/settings/SettingsAuditView';
 import { CustomersView } from './components/customers/CustomersView';
 import { QuotationsView } from './components/quotations/QuotationsView';
 import { InvoicesView } from './components/invoices/InvoicesView';
+import { DeliveryChallanView } from './components/challans/DeliveryChallanView';
+import { PurchasesView } from './components/purchases/PurchasesView';
+import { ExpensesView } from './components/expenses/ExpensesView';
 import { ServiceJobsView } from './components/service/ServiceJobsView';
 import { Lead } from './types';
 
@@ -31,6 +34,7 @@ const MainLayout: React.FC = () => {
   const [editingLead, setEditingLead] = useState<Lead | null>(null);
   const [recordingCallLead, setRecordingCallLead] = useState<Lead | null>(null);
   const [refreshTrigger, setRefreshTrigger] = useState(0);
+  const [headerSearchTerm, setHeaderSearchTerm] = useState('');
 
   if (isLoading) {
     return (
@@ -71,6 +75,7 @@ const MainLayout: React.FC = () => {
         activeTab={activeTab}
         onNavigate={handleNavigate}
         onToggleMobileMenu={() => setMobileMenuOpen(prev => !prev)}
+        onSearchSubmit={term => setHeaderSearchTerm(term)}
       />
 
       {/* Main Workspace with Sidebar and Content View */}
@@ -96,6 +101,7 @@ const MainLayout: React.FC = () => {
           {activeTab === 'leads' && !selectedLeadId && (
             <LeadsListView
               key={refreshTrigger}
+              initialSearch={headerSearchTerm}
               onSelectLead={handleSelectLead}
               onOpenCreateModal={() => setCreateLeadModalOpen(true)}
               onOpenImportModal={() => setImportModalOpen(true)}
@@ -118,6 +124,12 @@ const MainLayout: React.FC = () => {
           {activeTab === 'quotations' && <QuotationsView />}
 
           {activeTab === 'invoices' && <InvoicesView />}
+
+          {activeTab === 'challans' && <DeliveryChallanView />}
+
+          {activeTab === 'purchases' && <PurchasesView />}
+
+          {activeTab === 'expenses' && <ExpensesView />}
 
           {activeTab === 'service' && <ServiceJobsView />}
 

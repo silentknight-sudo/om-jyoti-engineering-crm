@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
-import { User, UserRole } from '../types';
-import { api, setApiAuthToken } from '../services/api';
+import { User } from '../types';
+import { api, setApiAuthToken, getApiAuthToken } from '../services/api';
 
 interface AuthContextType {
   user: User | null;
@@ -8,7 +8,6 @@ interface AuthContextType {
   isLoading: boolean;
   login: (email: string, pass: string) => Promise<void>;
   logout: () => Promise<void>;
-  switchRoleQuick: (role: UserRole) => Promise<void>;
   hasPermission: (permission: string) => boolean;
 }
 
@@ -18,28 +17,21 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [user, setUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(true);
 
-  // Initial load
+  // Initial load: only consider the visitor signed in if a stored token still
+  // resolves to a real session. No fallback account — an invalid or missing
+  // token always lands on the login screen.
   useEffect(() => {
     async function loadUser() {
+      if (!getApiAuthToken()) {
+        setIsLoading(false);
+        return;
+      }
       try {
         const { user } = await api.getMe();
         setUser(user);
       } catch (err) {
-        console.warn('Initial session check error:', err);
-        // Fallback default super admin
-        setUser({
-          id: 'usr-admin-1',
-          email: 'admin@omjyotiengg.com',
-          firstName: 'Admin',
-          lastName: 'Director',
-          phone: '+91 98110 12345',
-          role: 'super_admin',
-          roleId: 'role-super-admin',
-          department: 'Executive Management',
-          designation: 'Managing Director & Super Admin',
-          status: 'active',
-          createdAt: '2023-01-10T10:00:00Z'
-        });
+        setApiAuthToken(null);
+        setUser(null);
       } finally {
         setIsLoading(false);
       }
@@ -47,43 +39,21 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     loadUser();
   }, []);
 
+  // Deliberately does NOT touch the global `isLoading` flag. That flag gates
+  // whether MainLayout renders LoginView at all (`if (isLoading) return
+  // <spinner/>`), so toggling it here would unmount LoginView mid-submit; on
+  // a failed login the component remounts fresh, silently discarding the
+  // error state the catch block in LoginView just set — the user just sees
+  // the form reset with no explanation. The submit button's own spinner
+  // (LoginView's local isLoading) is enough.
   const login = async (email: string, pass: string) => {
-    setIsLoading(true);
-    try {
-      const res = await api.login(email, pass);
-      setUser(res.user);
-    } finally {
-      setIsLoading(false);
-    }
+    const res = await api.login(email, pass);
+    setUser(res.user);
   };
 
   const logout = async () => {
-    setIsLoading(true);
-    try {
-      await api.logout();
-      setUser(null);
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  // Quick Switcher for testing all role perspectives
-  const switchRoleQuick = async (targetRole: UserRole) => {
-    setIsLoading(true);
-    try {
-      let email = 'admin@omjyotiengg.com';
-      if (targetRole === 'team_lead') email = 'lead@omjyotiengg.com';
-      else if (targetRole === 'telecaller') email = 'caller@omjyotiengg.com';
-      else if (targetRole === 'manager') email = 'manager@omjyotiengg.com';
-      else if (targetRole === 'data_entry_operator') email = 'data@omjyotiengg.com';
-
-      const res = await api.login(email, 'pass@123');
-      setUser(res.user);
-    } catch (err) {
-      console.error('Failed to switch demo role:', err);
-    } finally {
-      setIsLoading(false);
-    }
+    await api.logout();
+    setUser(null);
   };
 
   const hasPermission = (permission: string): boolean => {
@@ -109,7 +79,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         isLoading,
         login,
         logout,
-        switchRoleQuick,
         hasPermission
       }}
     >

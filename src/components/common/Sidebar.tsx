@@ -13,6 +13,9 @@ import React from 'react';
   FileSpreadsheet,
   FileText,
   Receipt,
+  Truck,
+  ShoppingBag,
+  Wallet,
   X
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
@@ -38,6 +41,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
     { id: 'customers', label: 'Customers', icon: Users, permission: 'customers' },
     { id: 'quotations', label: 'Quotation Maker', icon: FileText, permission: 'quotations' },
     { id: 'invoices', label: 'Sales Invoices', icon: Receipt, permission: 'invoices' },
+    { id: 'challans', label: 'Delivery Challan', icon: Truck, permission: 'challans' },
+    { id: 'purchases', label: 'Purchases', icon: ShoppingBag, permission: 'purchases' },
+    { id: 'expenses', label: 'Expenses', icon: Wallet, permission: 'expenses' },
     { id: 'service', label: 'Service & AMC Jobs', icon: Wrench, permission: 'service' },
     { id: 'employees', label: 'Employees & Teams', icon: Briefcase, permission: 'employees' },
     { id: 'inventory', label: 'Inventory & Spares', icon: Package, permission: 'inventory' },
