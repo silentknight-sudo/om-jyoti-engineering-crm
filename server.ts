@@ -5,7 +5,10 @@ import { db } from './server/db';
 import { User, Lead, LeadStatus, MovementType, Party, CustomerEquipment, ServiceJob, Quotation, Invoice, PaymentIn, DeliveryChallan, PurchaseBill, Expense } from './src/types';
 
 const app = express();
-const PORT = 3000;
+// Cloud Run (and most hosting platforms) injects its own PORT env var and
+// only routes traffic to that port — hardcoding 3000 here would make the
+// app unreachable in production even though it starts up "successfully".
+const PORT = Number(process.env.PORT) || 3000;
 
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));
