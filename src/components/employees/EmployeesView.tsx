@@ -21,6 +21,7 @@ import {
 import { api } from '../../services/api';
 import { useAuth } from '../../context/AuthContext';
 import { User, Team, UserRole } from '../../types';
+import { Avatar } from '../common/Avatar';
 
 export const EmployeesView: React.FC = () => {
   const { user: currentUser, hasPermission } = useAuth();
@@ -157,13 +158,9 @@ export const EmployeesView: React.FC = () => {
             <div className="pt-2 border-t border-gray-100 flex items-center space-x-2">
               <div className="flex -space-x-2">
                 {(team.members || []).map((m, i) => (
-                  <img
-                    key={m.id || i}
-                    src={m.profilePhotoUrl || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80'}
-                    alt={m.firstName}
-                    title={`${m.firstName} ${m.lastName} (${m.role})`}
-                    className="w-7 h-7 rounded-full border-2 border-white object-cover"
-                  />
+                  <div key={m.id || i} title={`${m.firstName} ${m.lastName} (${m.role})`} className="border-2 border-white rounded-full">
+                    <Avatar firstName={m.firstName} lastName={m.lastName} photoUrl={m.profilePhotoUrl} size={28} />
+                  </div>
                 ))}
               </div>
               <span className="text-[11px] text-gray-400 pl-2">Active sales coverage</span>
@@ -206,11 +203,7 @@ export const EmployeesView: React.FC = () => {
             <div>
               <div className="flex items-start justify-between">
                 <div className="flex items-center space-x-3">
-                  <img
-                    src={emp.profilePhotoUrl || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80'}
-                    alt={emp.firstName}
-                    className="w-12 h-12 rounded-xl object-cover ring-1 ring-gray-100"
-                  />
+                  <Avatar firstName={emp.firstName} lastName={emp.lastName} photoUrl={emp.profilePhotoUrl} size={48} className="rounded-xl" />
                   <div>
                     <h3 className="font-bold text-sm text-gray-900">{emp.firstName} {emp.lastName}</h3>
                     <p className="text-[11px] text-gray-500">{emp.designation}</p>
@@ -398,11 +391,7 @@ export const EmployeesView: React.FC = () => {
           <div className="bg-white w-full max-w-lg rounded-2xl p-6 shadow-2xl border border-gray-100 space-y-5">
             <div className="flex items-center justify-between border-b border-gray-100 pb-3">
               <div className="flex items-center space-x-3">
-                <img
-                  src={perfModalEmployee.employee.profilePhotoUrl || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80'}
-                  alt={perfModalEmployee.employee.firstName}
-                  className="w-10 h-10 rounded-full object-cover"
-                />
+                <Avatar firstName={perfModalEmployee.employee.firstName} lastName={perfModalEmployee.employee.lastName} photoUrl={perfModalEmployee.employee.profilePhotoUrl} size={40} />
                 <div>
                   <h3 className="font-bold text-sm text-gray-900">
                     {perfModalEmployee.employee.firstName} {perfModalEmployee.employee.lastName}

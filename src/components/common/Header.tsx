@@ -10,6 +10,7 @@ import {
 import { useAuth } from '../../context/AuthContext';
 import { api } from '../../services/api';
 import { LowStockAlert, Lead } from '../../types';
+import { Avatar } from './Avatar';
 
 interface HeaderProps {
   activeTab?: string;
@@ -140,11 +141,7 @@ export const Header: React.FC<HeaderProps> = ({
 
         {/* User Avatar & Logout */}
         <div className="flex items-center space-x-2 pl-2 border-l border-gray-200">
-          <img
-            src={user?.profilePhotoUrl || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80'}
-            alt={user?.firstName}
-            className="w-8 h-8 rounded-full object-cover ring-1 ring-gray-200"
-          />
+          <Avatar firstName={user?.firstName} lastName={user?.lastName} photoUrl={user?.profilePhotoUrl} size={32} />
           <div className="hidden md:block text-left">
             <p className="text-xs font-bold text-gray-900 leading-none">{user?.firstName} {user?.lastName}</p>
             <p className="text-[10px] text-gray-500 leading-tight mt-0.5">{user?.designation || user?.department}</p>
