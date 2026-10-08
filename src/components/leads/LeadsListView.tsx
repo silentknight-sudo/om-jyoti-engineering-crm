@@ -28,6 +28,7 @@ interface LeadsListViewProps {
   onOpenImportModal: () => void;
   onEditLead: (lead: Lead) => void;
   onRecordCall: (lead: Lead) => void;
+  initialSearch?: string;
 }
 
 export const LeadsListView: React.FC<LeadsListViewProps> = ({
@@ -35,12 +36,13 @@ export const LeadsListView: React.FC<LeadsListViewProps> = ({
   onOpenCreateModal,
   onOpenImportModal,
   onEditLead,
-  onRecordCall
+  onRecordCall,
+  initialSearch
 }) => {
   const { user, hasPermission } = useAuth();
   const [leads, setLeads] = useState<Lead[]>([]);
   const [loading, setLoading] = useState(true);
-  const [search, setSearch] = useState('');
+  const [search, setSearch] = useState(initialSearch || '');
   const [statusFilter, setStatusFilter] = useState('all');
   const [priorityFilter, setPriorityFilter] = useState('all');
   const [sortBy, setSortBy] = useState('createdAt');
@@ -76,6 +78,16 @@ export const LeadsListView: React.FC<LeadsListViewProps> = ({
   useEffect(() => {
     fetchLeads();
   }, [statusFilter, priorityFilter, sortBy, sortOrder, currentPage, user]);
+
+  useEffect(() => {
+    if (initialSearch === undefined) return;
+    setSearch(initialSearch);
+    setCurrentPage(1);
+  }, [initialSearch]);
+
+  useEffect(() => {
+    fetchLeads();
+  }, [search]);
 
   const handleSearchSubmit = (e: React.FormEvent) => {
     e.preventDefault();

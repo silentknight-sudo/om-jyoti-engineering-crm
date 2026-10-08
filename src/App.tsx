@@ -34,6 +34,7 @@ const MainLayout: React.FC = () => {
   const [editingLead, setEditingLead] = useState<Lead | null>(null);
   const [recordingCallLead, setRecordingCallLead] = useState<Lead | null>(null);
   const [refreshTrigger, setRefreshTrigger] = useState(0);
+  const [headerSearchTerm, setHeaderSearchTerm] = useState('');
 
   if (isLoading) {
     return (
@@ -74,6 +75,7 @@ const MainLayout: React.FC = () => {
         activeTab={activeTab}
         onNavigate={handleNavigate}
         onToggleMobileMenu={() => setMobileMenuOpen(prev => !prev)}
+        onSearchSubmit={term => setHeaderSearchTerm(term)}
       />
 
       {/* Main Workspace with Sidebar and Content View */}
@@ -99,6 +101,7 @@ const MainLayout: React.FC = () => {
           {activeTab === 'leads' && !selectedLeadId && (
             <LeadsListView
               key={refreshTrigger}
+              initialSearch={headerSearchTerm}
               onSelectLead={handleSelectLead}
               onOpenCreateModal={() => setCreateLeadModalOpen(true)}
               onOpenImportModal={() => setImportModalOpen(true)}

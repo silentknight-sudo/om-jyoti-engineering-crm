@@ -23,8 +23,7 @@ export const LoginView: React.FC = () => {
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
   const [phone, setPhone] = useState('');
-  const [role, setRole] = useState<'super_admin' | 'admin' | 'team_lead' | 'telecaller' | 'data_entry_operator'>('super_admin');
-  
+
   const [showPassword, setShowPassword] = useState(false);
   const [rememberMe, setRememberMe] = useState(true);
   const [isLoading, setIsLoading] = useState(false);
@@ -33,6 +32,8 @@ export const LoginView: React.FC = () => {
   const [forgotModalOpen, setForgotModalOpen] = useState(false);
   const [forgotEmail, setForgotEmail] = useState('');
   const [forgotSuccess, setForgotSuccess] = useState(false);
+  const [forgotError, setForgotError] = useState<string | null>(null);
+  const [forgotLoading, setForgotLoading] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -47,8 +48,7 @@ export const LoginView: React.FC = () => {
           password,
           firstName,
           lastName,
-          phone,
-          role
+          phone
         });
         setSuccessMessage('Account registered successfully! Signing you in...');
         setTimeout(async () => {
@@ -64,14 +64,23 @@ export const LoginView: React.FC = () => {
     }
   };
 
-  const handleForgotSubmit = (e: React.FormEvent) => {
+  const handleForgotSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!forgotEmail) return;
-    setForgotSuccess(true);
-    setTimeout(() => {
-      setForgotSuccess(false);
-      setForgotModalOpen(false);
-    }, 2000);
+    setForgotError(null);
+    setForgotLoading(true);
+    try {
+      await api.forgotPassword(forgotEmail);
+      setForgotSuccess(true);
+      setTimeout(() => {
+        setForgotSuccess(false);
+        setForgotModalOpen(false);
+      }, 2500);
+    } catch (err: any) {
+      setForgotError(err.message || 'Could not send reset instructions');
+    } finally {
+      setForgotLoading(false);
+    }
   };
 
   return (
@@ -191,21 +200,8 @@ export const LoginView: React.FC = () => {
                 />
               </div>
 
-              <div>
-                <label className="block text-xs font-semibold text-gray-700 mb-1">
-                  System Role
-                </label>
-                <select
-                  value={role}
-                  onChange={e => setRole(e.target.value as any)}
-                  className="w-full px-3 py-2 bg-gray-50/50 hover:bg-gray-100/50 focus:bg-white border border-gray-200 focus:border-[#00288e] rounded-xl text-xs transition-all focus:outline-none focus:ring-2 focus:ring-[#00288e]/20 font-medium"
-                >
-                  <option value="super_admin">Super Administrator (Full System Control)</option>
-                  <option value="admin">System Administrator</option>
-                  <option value="team_lead">Team Lead / Sales Head</option>
-                  <option value="telecaller">Telecaller / Sales Executive</option>
-                  <option value="data_entry_operator">Data Entry Operator</option>
-                </select>
+              <div className="p-2.5 bg-blue-50 border border-blue-100 rounded-xl text-[11px] text-blue-800">
+                New accounts start as Telecaller. An administrator can change your role later from Employees &amp; Teams.
               </div>
             </>
           )}
@@ -330,6 +326,12 @@ export const LoginView: React.FC = () => {
               </div>
             ) : (
               <form onSubmit={handleForgotSubmit} className="space-y-3">
+                {forgotError && (
+                  <div className="p-2.5 bg-red-50 border border-red-200 rounded-xl text-xs text-red-700 flex items-start space-x-2">
+                    <AlertCircle className="w-4 h-4 text-red-600 shrink-0 mt-0.5" />
+                    <span>{forgotError}</span>
+                  </div>
+                )}
                 <input
                   type="email"
                   required
@@ -341,16 +343,17 @@ export const LoginView: React.FC = () => {
                 <div className="flex items-center justify-end space-x-2 pt-2">
                   <button
                     type="button"
-                    onClick={() => setForgotModalOpen(false)}
+                    onClick={() => { setForgotModalOpen(false); setForgotError(null); }}
                     className="px-3 py-1.5 text-xs text-gray-600 hover:bg-gray-100 rounded-lg font-medium"
                   >
                     Cancel
                   </button>
                   <button
                     type="submit"
-                    className="px-3.5 py-1.5 text-xs bg-[#00288e] text-white rounded-lg font-semibold hover:bg-blue-800"
+                    disabled={forgotLoading}
+                    className="px-3.5 py-1.5 text-xs bg-[#00288e] text-white rounded-lg font-semibold hover:bg-blue-800 disabled:opacity-60"
                   >
-                    Send Link
+                    {forgotLoading ? 'Sending...' : 'Send Link'}
                   </button>
                 </div>
               </form>

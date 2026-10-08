@@ -26,7 +26,7 @@ import {
   Expense
 } from '../types';
 
-let authToken: string | null = localStorage.getItem('omjyoti_auth_token') || 'usr-admin-1';
+let authToken: string | null = localStorage.getItem('omjyoti_auth_token');
 
 export function setApiAuthToken(token: string | null) {
   authToken = token;
@@ -114,6 +114,13 @@ export const api = {
 
   async getMe(): Promise<{ user: User }> {
     return request<{ user: User }>('/api/v1/auth/me');
+  },
+
+  async forgotPassword(email: string): Promise<{ message: string }> {
+    return request('/api/v1/auth/forgot-password', {
+      method: 'POST',
+      body: JSON.stringify({ email })
+    });
   },
 
   // Leads

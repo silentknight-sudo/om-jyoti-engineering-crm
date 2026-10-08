@@ -21,17 +21,41 @@ function sendError(res: Response, status: number, code: string, message: string,
   });
 }
 
-// Token simulation & user extraction
+// Bearer token resolution. Returns null when there is no valid, signed-in user —
+// callers must NOT silently fall back to an admin account.
 function extractUserFromHeader(req: Request): User | null {
   const authHeader = req.headers.authorization;
-  if (!authHeader) {
-    // Default to super admin for seamless development or if not signed in
-    return db.users[0];
-  }
+  if (!authHeader) return null;
   const token = authHeader.replace('Bearer ', '').trim();
+  if (!token) return null;
   const foundUser = db.users.find(u => u.id === token || u.email === token);
-  return foundUser || db.users[0];
+  if (!foundUser) return null;
+  if (foundUser.status === 'inactive' || foundUser.status === 'terminated') return null;
+  return foundUser;
 }
+
+// Public endpoints that do not require a signed-in session. Paths are relative
+// to the '/api/v1' mount point this middleware is attached to.
+const PUBLIC_PATHS = new Set<string>([
+  'POST /auth/login',
+  'POST /auth/register',
+  'POST /auth/forgot-password',
+  'POST /auth/reset-password',
+  'GET /health'
+]);
+
+function requireAuth(req: Request, res: Response, next: NextFunction) {
+  const key = `${req.method} ${req.path}`;
+  if (PUBLIC_PATHS.has(key)) return next();
+  const user = extractUserFromHeader(req);
+  if (!user) {
+    return sendError(res, 401, 'UNAUTHORIZED', 'Authentication required. Please sign in.');
+  }
+  (req as any).currentUser = user;
+  return next();
+}
+
+app.use('/api/v1', requireAuth);
 
 // Phone validator with Indian format support
 function validatePhone(phone: string): boolean {
@@ -92,15 +116,26 @@ app.post('/api/v1/auth/login', (req: Request, res: Response) => {
 });
 
 app.post('/api/v1/auth/register', (req: Request, res: Response) => {
-  const { email, password, firstName, lastName, phone, role = 'super_admin', department = 'Executive Management', designation = 'Managing Director' } = req.body;
+  const { email, password, firstName, lastName, phone } = req.body;
   if (!email || !password || !firstName) {
     return sendError(res, 400, 'VALIDATION_ERROR', 'First name, email and password are required');
+  }
+  if (password.length < 6) {
+    return sendError(res, 400, 'VALIDATION_ERROR', 'Password must be at least 6 characters');
   }
 
   const existing = db.users.find(u => u.email.toLowerCase() === email.toLowerCase());
   if (existing) {
     return sendError(res, 400, 'DUPLICATE_ERROR', 'An account with this email already exists');
   }
+
+  // Self-registration can never grant admin access. The very first account in a
+  // fresh database is the one exception, so a brand-new deployment can bootstrap
+  // its own super admin; every account after that gets a safe, low-privilege role.
+  const isBootstrap = db.users.length === 0;
+  const role = isBootstrap ? 'super_admin' : 'telecaller';
+  const department = isBootstrap ? 'Executive Management' : 'Sales';
+  const designation = isBootstrap ? 'Managing Director & Super Admin' : 'Telecaller';
 
   const newUser: any = {
     id: 'usr-' + Date.now(),
@@ -109,8 +144,8 @@ app.post('/api/v1/auth/register', (req: Request, res: Response) => {
     firstName: firstName.trim(),
     lastName: lastName ? lastName.trim() : '',
     phone: phone ? phone.trim() : '+91 98000 00000',
-    role: role || 'super_admin',
-    roleId: 'role-' + (role || 'super_admin'),
+    role,
+    roleId: 'role-' + role.replace(/_/g, '-'),
     department,
     designation,
     profilePhotoUrl: '',
