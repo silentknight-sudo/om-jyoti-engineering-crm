@@ -22,7 +22,20 @@ import {
   PaymentIn,
   DeliveryChallan,
   PurchaseBill,
-  Expense
+  Expense,
+  PipelineLead,
+  StageHistoryEntry,
+  RequirementSheet,
+  FollowUpActivity,
+  NegotiationEntry,
+  PipelineQuotation,
+  PipelineOrder,
+  ExecutionListItem,
+  SalesExecutionStage,
+  ServiceExecutionTrack,
+  ServiceExecution,
+  ServiceComponentAssessment,
+  ServiceFaultAssessment
 } from '../src/types';
 
 // In-Memory Database Store for Om Jyoti Engineering CRM
@@ -110,6 +123,21 @@ export class Database {
   deliveryChallans: DeliveryChallan[] = [];
   purchaseBills: PurchaseBill[] = [];
   expenses: Expense[] = [];
+
+  // Pipeline module (SRS v1.0)
+  pipelineLeads: PipelineLead[] = [];
+  stageHistory: StageHistoryEntry[] = [];
+  requirementSheets: RequirementSheet[] = [];
+  followUpActivities: FollowUpActivity[] = [];
+  negotiationEntries: NegotiationEntry[] = [];
+  pipelineQuotations: PipelineQuotation[] = [];
+  pipelineOrders: PipelineOrder[] = [];
+  executionListItems: ExecutionListItem[] = [];
+  salesExecutionStages: SalesExecutionStage[] = [];
+  serviceExecutionTracks: ServiceExecutionTrack[] = [];
+  serviceExecutions: ServiceExecution[] = [];
+  serviceComponentAssessments: ServiceComponentAssessment[] = [];
+  serviceFaultAssessments: ServiceFaultAssessment[] = [];
 
   activityLogs: ActivityLog[] = [
     {

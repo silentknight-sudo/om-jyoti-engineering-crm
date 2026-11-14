@@ -1,4 +1,5 @@
-export type UserRole = 'super_admin' | 'admin' | 'team_lead' | 'telecaller' | 'manager' | 'data_entry_operator';
+export type UserRole = 'super_admin' | 'admin' | 'team_lead' | 'telecaller' | 'manager' | 'data_entry_operator'
+  | 'sales_executive' | 'service_sales_executive' | 'order_approver' | 'technician' | 'execution_sales' | 'execution_service';
 
 export type UserStatus = 'active' | 'inactive' | 'on_leave' | 'terminated';
 
@@ -502,4 +503,319 @@ export interface DashboardKPIData {
   }[];
   recentLeads: Lead[];
   recentActivities: ActivityLog[];
+}
+
+// ==========================================
+// PIPELINE MODULE — SRS v1.0 (New Sales & Service Sales workflow)
+// ==========================================
+
+export type Division = 'Fire' | 'WTP' | 'STP' | 'ETP' | 'Underwater' | 'Pumps';
+
+export const DIVISIONS: Division[] = ['Fire', 'WTP', 'STP', 'ETP', 'Underwater', 'Pumps'];
+
+export type PipelineLeadType = 'new_sales' | 'service';
+
+export type NewSalesStage =
+  | 'new_lead' | 'requirement_sheet' | 'site_visit' | 'quotation' | 'quotation_submitted'
+  | 'negotiation' | 'order_punched' | 'order_on_hold' | 'order_approved' | 'execution' | 'order_closed';
+
+export type ServiceStage =
+  | 'service_lead' | 'requirement_sheet' | 'technician_assigned' | 'component_assessment'
+  | 'fault_assessment' | 'quotation' | 'negotiation' | 'service_order_punched'
+  | 'order_on_hold' | 'order_approved' | 'order_rejected' | 'repair_execution' | 'dispatch' | 'closed';
+
+export type PipelineStage = NewSalesStage | ServiceStage;
+
+export const NEW_SALES_STAGES: { id: NewSalesStage; label: string }[] = [
+  { id: 'new_lead', label: 'New Lead' },
+  { id: 'requirement_sheet', label: 'Requirement Sheet' },
+  { id: 'site_visit', label: 'Site Visit / Technical Meeting' },
+  { id: 'quotation', label: 'Quotation' },
+  { id: 'quotation_submitted', label: 'Quotation Submitted' },
+  { id: 'negotiation', label: 'Negotiation' },
+  { id: 'order_punched', label: 'Order Punched' },
+  { id: 'order_on_hold', label: 'Order On Hold' },
+  { id: 'order_approved', label: 'Order Approved' },
+  { id: 'execution', label: 'Execution' },
+  { id: 'order_closed', label: 'Order Closed' }
+];
+
+export const SERVICE_STAGES: { id: ServiceStage; label: string }[] = [
+  { id: 'service_lead', label: 'Service Lead' },
+  { id: 'requirement_sheet', label: 'Requirement Sheet' },
+  { id: 'technician_assigned', label: 'Technician Assigned' },
+  { id: 'component_assessment', label: 'Component Assessment' },
+  { id: 'fault_assessment', label: 'Fault Assessment' },
+  { id: 'quotation', label: 'Quotation' },
+  { id: 'negotiation', label: 'Negotiation' },
+  { id: 'service_order_punched', label: 'Service Order Punched' },
+  { id: 'order_on_hold', label: 'On Hold' },
+  { id: 'order_approved', label: 'Approved' },
+  { id: 'order_rejected', label: 'Rejected' },
+  { id: 'repair_execution', label: 'Repair Execution' },
+  { id: 'dispatch', label: 'Dispatch' },
+  { id: 'closed', label: 'Closed / Installation' }
+];
+
+export type AmcStatus = 'active' | 'expired' | 'none';
+export type AmcType = 'comprehensive' | 'spares_only' | 'labour_only' | 'none';
+
+export interface PipelineLead {
+  id: string;
+  leadNumber: string; // e.g. LD-2026-0001
+  leadType: PipelineLeadType;
+  division: Division;
+  customerName: string;
+  companyName?: string;
+  phone: string;
+  email?: string;
+  address?: string;
+  source: LeadSource;
+  ownerId: string;
+  ownerName: string;
+  stage: PipelineStage;
+  stageEnteredAt: string; // drives ageing
+  lastRemark?: string;
+  nextAction?: string;
+  nextActionDate?: string;
+  lastNegotiatedPrice?: number;
+
+  // Service-only fields (FR-S1)
+  amcStatus?: AmcStatus;
+  warrantyStatus?: AmcStatus;
+  amcStartDate?: string;
+  amcEndDate?: string;
+  amcType?: AmcType;
+  outOfAmcOrWarranty?: boolean; // if true, everything is payable
+  assignedTechnicianId?: string;
+  assignedTechnicianName?: string;
+  assessmentLocation?: 'factory' | 'site';
+
+  createdById: string;
+  createdByName?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface StageHistoryEntry {
+  id: string;
+  leadId: string;
+  fromStage?: PipelineStage;
+  toStage: PipelineStage;
+  changedById: string;
+  changedByName: string;
+  changedAt: string;
+  note?: string;
+}
+
+export interface RequirementSheet {
+  id: string;
+  leadId: string;
+  version: number;
+  fields: Record<string, string>; // division-dependent; "NA" where not applicable
+  updatedById: string;
+  updatedByName?: string;
+  updatedAt: string;
+  createdAt: string;
+}
+
+export type CallType = 'Intro Call' | 'Follow-up Call' | 'Negotiation Call' | 'Technical Discussion Call' | 'Call Not Answered' | 'WhatsApp';
+export type MeetingType = 'Follow-up Meeting' | 'Negotiation Meeting' | 'Technical Meeting' | 'Site Visit' | 'Technical Assessment';
+
+export interface ActivityPhoto {
+  url: string;
+  latitude?: number;
+  longitude?: number;
+  takenAt: string;
+}
+
+export interface FollowUpActivity {
+  id: string;
+  leadId: string;
+  activityKind: 'call' | 'meeting';
+  type: CallType | MeetingType;
+  stageAtLogging: PipelineStage;
+  remark: string;
+  nextAction?: string;
+  nextActionDate?: string;
+  photos?: ActivityPhoto[]; // mandatory for meeting types per FR-F6/FR-F7
+  createdById: string;
+  createdByName?: string;
+  createdAt: string;
+}
+
+// Meeting types that require mandatory photo+GPS verification before being logged as done (FR-F6)
+export const PHOTO_REQUIRED_MEETING_TYPES: MeetingType[] = ['Follow-up Meeting', 'Negotiation Meeting', 'Technical Meeting', 'Site Visit', 'Technical Assessment'];
+
+export interface NegotiationEntry {
+  id: string;
+  leadId: string;
+  entryDate: string;
+  discussion: string;
+  priceOffered: number;
+  requirementChanged: boolean;
+  revisedQuotationId?: string;
+  createdById: string;
+  createdByName?: string;
+  createdAt: string;
+}
+
+export interface PipelineQuotationItem {
+  id: string;
+  description: string;
+  quantity: number;
+  unit: string;
+  rate: number;
+  taxPercent: number;
+  amount: number;
+}
+
+export type PipelineQuotationStatus = 'draft' | 'submitted' | 'revised' | 'accepted';
+
+export interface PipelineQuotation {
+  id: string;
+  leadId: string;
+  quotationNumber: string; // QTN-2026-0001-Rev0
+  revisionNumber: number;
+  parentQuotationId?: string;
+  status: PipelineQuotationStatus;
+  items: PipelineQuotationItem[];
+  subtotal: number;
+  totalTax: number;
+  grandTotal: number;
+  includesRepairTnC: boolean; // service quotations only (FR-Q2)
+  emailScreenshotUrl?: string; // required at "Quotation Submitted" stage (FR-Q3)
+  createdById: string;
+  createdByName?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type OrderStatus = 'punched' | 'on_hold' | 'approved' | 'rejected';
+
+export interface OrderDocument {
+  id: string;
+  type: 'advance_payment_proof' | 'po_or_contract' | 'kyc_pan' | 'kyc_aadhaar' | 'kyc_gst' | 'other';
+  fileName: string;
+  fileUrl: string;
+  uploadedAt: string;
+}
+
+export interface PipelineOrder {
+  id: string;
+  orderNumber?: string; // issued only on approval (FR-O5)
+  leadId: string;
+  leadType: PipelineLeadType;
+  quotationId: string;
+  etd: string; // estimated date of delivery — mandatory at punch (FR-O2)
+  documents: OrderDocument[];
+  status: OrderStatus;
+  holdReason?: string;
+  rejectReason?: string;
+  approvedById?: string;
+  approvedByName?: string;
+  approvedAt?: string;
+  punchCount: number; // increments each re-punch after On Hold (FR-O4)
+  createdById: string;
+  createdByName?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+// ---- Sales (project) execution: FR-E1..FR-E12 ----
+
+export type ManufacturingStep = 'fabrication' | 'assembly_piping' | 'testing' | 'final_packaging';
+export const MANUFACTURING_STEPS: { id: ManufacturingStep; label: string }[] = [
+  { id: 'fabrication', label: 'Fabrication' },
+  { id: 'assembly_piping', label: 'Assembly + Piping' },
+  { id: 'testing', label: 'Testing' },
+  { id: 'final_packaging', label: 'Final Packaging' }
+];
+
+export interface ExecutionListItem {
+  id: string;
+  orderId: string;
+  listType: 'purchase' | 'manufacturing';
+  itemName: string;
+  tentativeDate?: string; // undefined when notApplicable
+  dispatchDate?: string;
+  notApplicable: boolean;
+  stageId?: string; // assigned once clubbed by dispatch date
+  completed: boolean;
+}
+
+export interface SalesExecutionStage {
+  id: string;
+  orderId: string;
+  stageIndex: number; // Stage 1, 2, 3...
+  dispatchDate: string;
+  purchaseListComplete: boolean;
+  manufacturingListComplete: boolean;
+  manufacturingStep?: ManufacturingStep;
+  fabricationImageUrls?: string[];
+  dispatchDocUrl?: string; // invoice/DC required to mark dispatch complete (FR-E9)
+  materialDelivered: boolean;
+  onsiteTeamAssigned: boolean;
+  onsiteTeamName?: string;
+  onsiteComplete: boolean;
+  completionPhotoUrls?: string[];
+  status: 'pending' | 'in_progress' | 'dispatched' | 'delivered' | 'completed';
+  welcomeCallLogged: boolean;
+  siteReadinessChecked: boolean;
+  siteReadinessEmailSentAt?: string;
+  siteImageUrls?: string[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+// ---- Service (repair) execution: FR-X1..FR-X5 ----
+
+export type ServiceTrackType = 'spares' | 'machining' | 'labour';
+
+export interface ServiceExecutionTrack {
+  id: string;
+  orderId: string;
+  trackType: ServiceTrackType;
+  listGenerated: boolean;
+  items: string[]; // spares list / machining items (rotor, shaft, chamber) / labour list
+  purchaseComplete?: boolean; // spares track
+  jobComplete?: boolean; // machining track
+  paintingComplete?: boolean; // labour track
+}
+
+export interface ServiceExecution {
+  id: string;
+  orderId: string;
+  dismantlingComplete: boolean;
+  assemblyInstallationComplete: boolean;
+  dispatchDate?: string;
+  dispatchDocUrl?: string;
+  onsiteInstallationRequired: boolean;
+  onsiteInstallationComplete: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+// ---- Service assessment (component + fault): FR-S4, FR-S5 ----
+
+export type ServiceEquipmentCategory = 'Pumps' | 'Motors' | 'Compressors' | 'High-Pressure Equipment';
+
+export interface ServiceComponentAssessment {
+  id: string;
+  leadId: string;
+  equipmentCategory: ServiceEquipmentCategory;
+  photoUrls: string[]; // 3-4 mandatory (FR-S4)
+  conditionNotes: string;
+  assessedById: string;
+  assessedByName?: string;
+  assessedAt: string;
+}
+
+export interface ServiceFaultAssessment {
+  id: string;
+  leadId: string;
+  faultListPhotoUrl: string; // technician uploads photo of handwritten fault list (FR-S5)
+  uploadedById: string;
+  uploadedByName?: string;
+  uploadedAt: string;
 }

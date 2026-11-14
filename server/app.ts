@@ -2064,4 +2064,777 @@ app.get('/api/v1/activity-logs', (req: Request, res: Response) => {
   return res.json({ logs: results.slice(0, limitNum), total: results.length });
 });
 
+// ==========================================
+// PIPELINE MODULE — SRS v1.0 (New Sales & Service Sales workflow)
+// ==========================================
+
+function recordStageChange(leadId: string, fromStage: string | undefined, toStage: string, user: User, note?: string) {
+  const entry: any = {
+    id: 'sh-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6),
+    leadId,
+    fromStage,
+    toStage,
+    changedById: user.id,
+    changedByName: `${user.firstName} ${user.lastName}`,
+    changedAt: new Date().toISOString(),
+    note
+  };
+  db.stageHistory.push(entry);
+  return entry;
+}
+
+function moveLeadToStage(lead: any, toStage: string, user: User, note?: string) {
+  const fromStage = lead.stage;
+  lead.stage = toStage;
+  lead.stageEnteredAt = new Date().toISOString();
+  lead.updatedAt = lead.stageEnteredAt;
+  recordStageChange(lead.id, fromStage, toStage, user, note);
+}
+
+// ---- Pipeline Leads ----
+
+app.get('/api/v1/pipeline/leads', (req: Request, res: Response) => {
+  const { leadType, division, stage, ownerId, search } = req.query;
+  let results = [...db.pipelineLeads];
+  if (leadType && leadType !== 'all') results = results.filter(l => l.leadType === leadType);
+  if (division && division !== 'all') results = results.filter(l => l.division === division);
+  if (stage && stage !== 'all') results = results.filter(l => l.stage === stage);
+  if (ownerId) results = results.filter(l => l.ownerId === ownerId);
+  if (search) {
+    const q = (search as string).toLowerCase();
+    results = results.filter(l =>
+      l.customerName.toLowerCase().includes(q) ||
+      l.leadNumber.toLowerCase().includes(q) ||
+      (l.companyName || '').toLowerCase().includes(q) ||
+      l.phone.includes(q)
+    );
+  }
+  results.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+  return res.json({ leads: results, total: results.length });
+});
+
+app.get('/api/v1/pipeline/leads/:id', (req: Request, res: Response) => {
+  const lead = db.pipelineLeads.find(l => l.id === req.params.id);
+  if (!lead) return sendError(res, 404, 'NOT_FOUND', 'Lead not found');
+  return res.json({
+    lead,
+    stageHistory: db.stageHistory.filter(s => s.leadId === lead.id).sort((a, b) => new Date(a.changedAt).getTime() - new Date(b.changedAt).getTime()),
+    requirementSheets: db.requirementSheets.filter(r => r.leadId === lead.id).sort((a, b) => b.version - a.version),
+    followUps: db.followUpActivities.filter(f => f.leadId === lead.id).sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()),
+    negotiations: db.negotiationEntries.filter(n => n.leadId === lead.id).sort((a, b) => new Date(a.entryDate).getTime() - new Date(b.entryDate).getTime()),
+    quotations: db.pipelineQuotations.filter(q => q.leadId === lead.id).sort((a, b) => b.revisionNumber - a.revisionNumber),
+    orders: db.pipelineOrders.filter(o => o.leadId === lead.id),
+    componentAssessments: db.serviceComponentAssessments.filter(c => c.leadId === lead.id),
+    faultAssessments: db.serviceFaultAssessments.filter(f => f.leadId === lead.id)
+  });
+});
+
+app.post('/api/v1/pipeline/leads', (req: Request, res: Response) => {
+  const currentUser = (req as any).currentUser as User;
+  const { leadType, division, customerName, phone, companyName, email, address, source } = req.body;
+  if (!leadType || !division || !customerName || !phone) {
+    return sendError(res, 400, 'VALIDATION_ERROR', 'Lead type, division, customer name, and phone are required');
+  }
+  const now = new Date().toISOString();
+  const year = new Date().getFullYear();
+  const newLead: any = {
+    id: 'pld-' + Date.now(),
+    leadNumber: `LD-${year}-${String(db.pipelineLeads.length + 1).padStart(4, '0')}`,
+    leadType,
+    division,
+    customerName: customerName.trim(),
+    companyName: companyName || '',
+    phone: phone.trim(),
+    email: email || '',
+    address: address || '',
+    source: source || 'other',
+    ownerId: req.body.ownerId || currentUser.id,
+    ownerName: req.body.ownerName || `${currentUser.firstName} ${currentUser.lastName}`,
+    stage: leadType === 'service' ? 'service_lead' : 'new_lead',
+    stageEnteredAt: now,
+    amcStatus: leadType === 'service' ? (req.body.amcStatus || 'none') : undefined,
+    warrantyStatus: leadType === 'service' ? (req.body.warrantyStatus || 'none') : undefined,
+    amcStartDate: req.body.amcStartDate || '',
+    amcEndDate: req.body.amcEndDate || '',
+    amcType: leadType === 'service' ? (req.body.amcType || 'none') : undefined,
+    outOfAmcOrWarranty: !!req.body.outOfAmcOrWarranty,
+    createdById: currentUser.id,
+    createdByName: `${currentUser.firstName} ${currentUser.lastName}`,
+    createdAt: now,
+    updatedAt: now
+  };
+  db.pipelineLeads.push(newLead);
+  recordStageChange(newLead.id, undefined, newLead.stage, currentUser, 'Lead created');
+  db.logActivity(currentUser, `created ${leadType} lead ${newLead.leadNumber} for ${newLead.customerName}`, 'lead', newLead.id);
+  return res.status(201).json({ message: 'Lead created successfully', lead: newLead });
+});
+
+app.put('/api/v1/pipeline/leads/:id', (req: Request, res: Response) => {
+  const currentUser = (req as any).currentUser as User;
+  const lead = db.pipelineLeads.find(l => l.id === req.params.id) as any;
+  if (!lead) return sendError(res, 404, 'NOT_FOUND', 'Lead not found');
+  Object.assign(lead, req.body, { id: lead.id, updatedAt: new Date().toISOString() });
+  db.logActivity(currentUser, `updated lead ${lead.leadNumber}`, 'lead', lead.id);
+  return res.json({ message: 'Lead updated successfully', lead });
+});
+
+app.patch('/api/v1/pipeline/leads/:id/reassign', (req: Request, res: Response) => {
+  const currentUser = (req as any).currentUser as User;
+  const lead = db.pipelineLeads.find(l => l.id === req.params.id) as any;
+  if (!lead) return sendError(res, 404, 'NOT_FOUND', 'Lead not found');
+  const owner = db.users.find(u => u.id === req.body.ownerId);
+  if (!owner) return sendError(res, 400, 'VALIDATION_ERROR', 'A valid owner is required');
+  lead.ownerId = owner.id;
+  lead.ownerName = `${owner.firstName} ${owner.lastName}`;
+  lead.updatedAt = new Date().toISOString();
+  db.logActivity(currentUser, `reassigned lead ${lead.leadNumber} to ${lead.ownerName}`, 'lead', lead.id);
+  return res.json({ message: 'Lead reassigned successfully', lead });
+});
+
+app.patch('/api/v1/pipeline/leads/:id/stage', (req: Request, res: Response) => {
+  const currentUser = (req as any).currentUser as User;
+  const lead = db.pipelineLeads.find(l => l.id === req.params.id) as any;
+  if (!lead) return sendError(res, 404, 'NOT_FOUND', 'Lead not found');
+  const { stage, note } = req.body;
+  if (!stage) return sendError(res, 400, 'VALIDATION_ERROR', 'Target stage is required');
+  moveLeadToStage(lead, stage, currentUser, note);
+  db.logActivity(currentUser, `moved lead ${lead.leadNumber} to stage "${stage}"`, 'lead', lead.id);
+  return res.json({ message: 'Stage updated successfully', lead });
+});
+
+app.patch('/api/v1/pipeline/leads/:id/assign-technician', (req: Request, res: Response) => {
+  const currentUser = (req as any).currentUser as User;
+  const lead = db.pipelineLeads.find(l => l.id === req.params.id) as any;
+  if (!lead) return sendError(res, 404, 'NOT_FOUND', 'Lead not found');
+  const tech = db.users.find(u => u.id === req.body.technicianId);
+  if (!tech) return sendError(res, 400, 'VALIDATION_ERROR', 'A valid technician is required');
+  lead.assignedTechnicianId = tech.id;
+  lead.assignedTechnicianName = `${tech.firstName} ${tech.lastName}`;
+  lead.assessmentLocation = req.body.assessmentLocation || 'factory';
+  moveLeadToStage(lead, 'technician_assigned', currentUser, `Assigned to ${lead.assignedTechnicianName}`);
+  db.logActivity(currentUser, `assigned technician ${lead.assignedTechnicianName} to lead ${lead.leadNumber}`, 'lead', lead.id);
+  return res.json({ message: 'Technician assigned successfully', lead });
+});
+
+// ---- Requirement Sheet (FR-R1..FR-R3) ----
+
+app.put('/api/v1/pipeline/leads/:id/requirement-sheet', (req: Request, res: Response) => {
+  const currentUser = (req as any).currentUser as User;
+  const lead = db.pipelineLeads.find(l => l.id === req.params.id) as any;
+  if (!lead) return sendError(res, 404, 'NOT_FOUND', 'Lead not found');
+  const { fields } = req.body;
+  if (!fields || typeof fields !== 'object') return sendError(res, 400, 'VALIDATION_ERROR', 'Requirement sheet fields are required');
+
+  const existing = db.requirementSheets.filter(r => r.leadId === lead.id);
+  const nextVersion = existing.length > 0 ? Math.max(...existing.map(r => r.version)) + 1 : 1;
+  const now = new Date().toISOString();
+
+  const sheet: any = {
+    id: 'rs-' + Date.now(),
+    leadId: lead.id,
+    version: nextVersion,
+    fields,
+    updatedById: currentUser.id,
+    updatedByName: `${currentUser.firstName} ${currentUser.lastName}`,
+    updatedAt: now,
+    createdAt: now
+  };
+  db.requirementSheets.push(sheet);
+
+  if (lead.stage === 'new_lead' || lead.stage === 'service_lead') {
+    moveLeadToStage(lead, 'requirement_sheet', currentUser, `Requirement sheet v${nextVersion} saved`);
+  }
+
+  db.logActivity(currentUser, `saved requirement sheet v${nextVersion} for lead ${lead.leadNumber}`, 'lead', lead.id);
+  return res.status(201).json({ message: 'Requirement sheet saved successfully', requirementSheet: sheet });
+});
+
+// ---- Follow-up activities: calls & meetings (FR-F1..FR-F8) ----
+
+app.post('/api/v1/pipeline/leads/:id/follow-ups', (req: Request, res: Response) => {
+  const currentUser = (req as any).currentUser as User;
+  const lead = db.pipelineLeads.find(l => l.id === req.params.id) as any;
+  if (!lead) return sendError(res, 404, 'NOT_FOUND', 'Lead not found');
+
+  const { activityKind, type, remark, nextAction, nextActionDate, photos } = req.body;
+  if (!activityKind || !type || !remark) {
+    return sendError(res, 400, 'VALIDATION_ERROR', 'Activity kind, type, and remark are required');
+  }
+
+  const PHOTO_REQUIRED = ['Follow-up Meeting', 'Negotiation Meeting', 'Technical Meeting', 'Site Visit', 'Technical Assessment'];
+  if (activityKind === 'meeting' && PHOTO_REQUIRED.includes(type)) {
+    if (!Array.isArray(photos) || photos.length === 0) {
+      return sendError(res, 400, 'VALIDATION_ERROR', 'This meeting type requires at least one GPS-tagged site photo before it can be logged as done');
+    }
+    for (const p of photos) {
+      if (p.latitude === undefined || p.longitude === undefined) {
+        return sendError(res, 400, 'VALIDATION_ERROR', 'Each photo must include GPS coordinates');
+      }
+    }
+  }
+
+  const now = new Date().toISOString();
+  const activity: any = {
+    id: 'fu-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6),
+    leadId: lead.id,
+    activityKind,
+    type,
+    stageAtLogging: lead.stage,
+    remark: remark.trim(),
+    nextAction: nextAction || '',
+    nextActionDate: nextActionDate || '',
+    photos: photos || [],
+    createdById: currentUser.id,
+    createdByName: `${currentUser.firstName} ${currentUser.lastName}`,
+    createdAt: now
+  };
+  db.followUpActivities.push(activity);
+
+  lead.lastRemark = activity.remark;
+  if (nextAction) lead.nextAction = nextAction;
+  if (nextActionDate) lead.nextActionDate = nextActionDate;
+
+  // FR-F5: Call Not Answered automatically creates a follow-up for the next day
+  if (type === 'Call Not Answered') {
+    const tomorrow = new Date(Date.now() + 86400000).toISOString();
+    lead.nextAction = 'Retry call (auto: Call Not Answered)';
+    lead.nextActionDate = tomorrow;
+  }
+  lead.updatedAt = now;
+
+  db.logActivity(currentUser, `logged ${activityKind} "${type}" on lead ${lead.leadNumber}`, 'lead', lead.id, remark);
+  return res.status(201).json({ message: 'Activity logged successfully', activity, lead });
+});
+
+app.get('/api/v1/pipeline/follow-ups/dashboard', (req: Request, res: Response) => {
+  const currentUser = (req as any).currentUser as User;
+  const { ownerId } = req.query;
+  const now = new Date();
+  const scopedLeads = ownerId ? db.pipelineLeads.filter(l => l.ownerId === ownerId) : db.pipelineLeads;
+
+  const due: any[] = [];
+  const overdue: any[] = [];
+  const upcoming: any[] = [];
+
+  for (const lead of scopedLeads) {
+    if (!lead.nextActionDate) continue;
+    const due_date = new Date(lead.nextActionDate);
+    const item = { leadId: lead.id, leadNumber: lead.leadNumber, customerName: lead.customerName, nextAction: lead.nextAction, nextActionDate: lead.nextActionDate, ownerName: lead.ownerName, stage: lead.stage };
+    if (due_date < now) overdue.push(item);
+    else if (due_date.toDateString() === now.toDateString()) due.push(item);
+    else upcoming.push(item);
+  }
+
+  return res.json({ due, overdue, upcoming });
+});
+
+// ---- Negotiation table (FR-Q5..FR-Q7) ----
+
+app.post('/api/v1/pipeline/leads/:id/negotiations', (req: Request, res: Response) => {
+  const currentUser = (req as any).currentUser as User;
+  const lead = db.pipelineLeads.find(l => l.id === req.params.id) as any;
+  if (!lead) return sendError(res, 404, 'NOT_FOUND', 'Lead not found');
+
+  const { discussion, priceOffered, requirementChanged, entryDate } = req.body;
+  if (!discussion || priceOffered === undefined) {
+    return sendError(res, 400, 'VALIDATION_ERROR', 'Discussion notes and price offered are required');
+  }
+
+  const now = new Date().toISOString();
+  const entry: any = {
+    id: 'neg-' + Date.now(),
+    leadId: lead.id,
+    entryDate: entryDate || now,
+    discussion: discussion.trim(),
+    priceOffered: Number(priceOffered),
+    requirementChanged: !!requirementChanged,
+    createdById: currentUser.id,
+    createdByName: `${currentUser.firstName} ${currentUser.lastName}`,
+    createdAt: now
+  };
+  db.negotiationEntries.push(entry);
+
+  lead.lastNegotiatedPrice = entry.priceOffered;
+  lead.updatedAt = now;
+  if (lead.stage !== 'negotiation') {
+    moveLeadToStage(lead, 'negotiation', currentUser, 'Negotiation activity logged');
+  }
+
+  db.logActivity(currentUser, `logged negotiation on lead ${lead.leadNumber} at ₹${entry.priceOffered}`, 'lead', lead.id, discussion);
+  return res.status(201).json({ message: 'Negotiation entry recorded successfully', negotiation: entry, lead });
+});
+
+// ---- Pipeline Quotations (FR-Q1..FR-Q4) ----
+
+app.post('/api/v1/pipeline/leads/:id/quotations', (req: Request, res: Response) => {
+  const currentUser = (req as any).currentUser as User;
+  const lead = db.pipelineLeads.find(l => l.id === req.params.id) as any;
+  if (!lead) return sendError(res, 404, 'NOT_FOUND', 'Lead not found');
+
+  const { items, parentQuotationId } = req.body;
+  if (!Array.isArray(items) || items.length === 0) {
+    return sendError(res, 400, 'VALIDATION_ERROR', 'At least one line item is required');
+  }
+
+  let subtotal = 0, totalTax = 0;
+  const computedItems = items.map((it: any) => {
+    const qty = Number(it.quantity) || 0;
+    const rate = Number(it.rate) || 0;
+    const taxPercent = Number(it.taxPercent) || 18;
+    const base = qty * rate;
+    const tax = base * (taxPercent / 100);
+    subtotal += base;
+    totalTax += tax;
+    return { id: 'qi-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6), description: it.description, quantity: qty, unit: it.unit || 'Unit', rate, taxPercent, amount: Number((base + tax).toFixed(2)) };
+  });
+  const grandTotal = Number((subtotal + totalTax).toFixed(2));
+
+  const existingForLead = db.pipelineQuotations.filter(q => q.leadId === lead.id);
+  const revisionNumber = parentQuotationId ? existingForLead.filter(q => q.parentQuotationId === parentQuotationId || q.id === parentQuotationId).length : 0;
+  const year = new Date().getFullYear();
+  const now = new Date().toISOString();
+
+  const quotation: any = {
+    id: 'plq-' + Date.now(),
+    leadId: lead.id,
+    quotationNumber: `QTN-${year}-${String(existingForLead.length + 1).padStart(4, '0')}-Rev${revisionNumber}`,
+    revisionNumber,
+    parentQuotationId: parentQuotationId || undefined,
+    status: 'draft',
+    items: computedItems,
+    subtotal: Number(subtotal.toFixed(2)),
+    totalTax: Number(totalTax.toFixed(2)),
+    grandTotal,
+    includesRepairTnC: lead.leadType === 'service',
+    createdById: currentUser.id,
+    createdByName: `${currentUser.firstName} ${currentUser.lastName}`,
+    createdAt: now,
+    updatedAt: now
+  };
+  db.pipelineQuotations.push(quotation);
+
+  if (lead.stage === 'site_visit' || lead.stage === 'requirement_sheet' || lead.stage === 'fault_assessment') {
+    moveLeadToStage(lead, 'quotation', currentUser, `Quotation ${quotation.quotationNumber} generated`);
+  } else if (parentQuotationId) {
+    // revised quotation from a requirement change during negotiation (FR-Q7)
+    const lastNeg = [...db.negotiationEntries].filter(n => n.leadId === lead.id).sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())[0];
+    if (lastNeg) lastNeg.revisedQuotationId = quotation.id;
+  }
+
+  db.logActivity(currentUser, `generated quotation ${quotation.quotationNumber} for lead ${lead.leadNumber}`, 'lead', lead.id);
+  return res.status(201).json({ message: 'Quotation generated successfully', quotation, lead });
+});
+
+app.patch('/api/v1/pipeline/quotations/:id/submit', (req: Request, res: Response) => {
+  const currentUser = (req as any).currentUser as User;
+  const quotation = db.pipelineQuotations.find(q => q.id === req.params.id) as any;
+  if (!quotation) return sendError(res, 404, 'NOT_FOUND', 'Quotation not found');
+  const { emailScreenshotUrl } = req.body;
+  if (!emailScreenshotUrl) {
+    return sendError(res, 400, 'VALIDATION_ERROR', 'An email screenshot attachment is required to mark the quotation as submitted');
+  }
+  quotation.status = 'submitted';
+  quotation.emailScreenshotUrl = emailScreenshotUrl;
+  quotation.updatedAt = new Date().toISOString();
+
+  const lead = db.pipelineLeads.find(l => l.id === quotation.leadId) as any;
+  if (lead && lead.leadType === 'new_sales') {
+    moveLeadToStage(lead, 'quotation_submitted', currentUser, `Quotation ${quotation.quotationNumber} submitted`);
+  }
+
+  db.logActivity(currentUser, `marked quotation ${quotation.quotationNumber} as submitted`, 'lead', quotation.leadId);
+  return res.json({ message: 'Quotation marked as submitted', quotation });
+});
+
+// ---- Order punch & approval loop (FR-O1..FR-O5) ----
+
+app.post('/api/v1/pipeline/leads/:id/orders', (req: Request, res: Response) => {
+  const currentUser = (req as any).currentUser as User;
+  const lead = db.pipelineLeads.find(l => l.id === req.params.id) as any;
+  if (!lead) return sendError(res, 404, 'NOT_FOUND', 'Lead not found');
+
+  const { quotationId, etd, documents } = req.body;
+  const quotation = db.pipelineQuotations.find(q => q.id === quotationId);
+  if (!quotation) return sendError(res, 400, 'VALIDATION_ERROR', 'A valid quotation is required to punch an order');
+  if (!etd) return sendError(res, 400, 'VALIDATION_ERROR', 'ETD (estimated date of delivery) is mandatory at order punch');
+
+  const requiredDocTypes = lead.leadType === 'new_sales'
+    ? ['advance_payment_proof', 'po_or_contract']
+    : ['advance_payment_proof'];
+  const providedTypes = (documents || []).map((d: any) => d.type);
+  const missing = requiredDocTypes.filter(t => !providedTypes.includes(t));
+  if (missing.length > 0) {
+    return sendError(res, 400, 'VALIDATION_ERROR', `Missing mandatory documents: ${missing.join(', ')}`);
+  }
+
+  const now = new Date().toISOString();
+  let order: any = db.pipelineOrders.find(o => o.leadId === lead.id && o.status === 'on_hold');
+
+  if (order) {
+    // Re-punch after On Hold (FR-O4)
+    order.quotationId = quotationId;
+    order.etd = etd;
+    order.documents = (documents || []).map((d: any) => ({ id: 'doc-' + Date.now() + '-' + Math.random().toString(36).slice(2, 5), uploadedAt: now, ...d }));
+    order.status = 'punched';
+    order.holdReason = undefined;
+    order.punchCount += 1;
+    order.updatedAt = now;
+  } else {
+    order = {
+      id: 'ord-' + Date.now(),
+      leadId: lead.id,
+      leadType: lead.leadType,
+      quotationId,
+      etd,
+      documents: (documents || []).map((d: any) => ({ id: 'doc-' + Date.now() + '-' + Math.random().toString(36).slice(2, 5), uploadedAt: now, ...d })),
+      status: 'punched',
+      punchCount: 1,
+      createdById: currentUser.id,
+      createdByName: `${currentUser.firstName} ${currentUser.lastName}`,
+      createdAt: now,
+      updatedAt: now
+    };
+    db.pipelineOrders.push(order);
+  }
+
+  moveLeadToStage(lead, lead.leadType === 'service' ? 'service_order_punched' : 'order_punched', currentUser, `Order punched (ETD ${etd})`);
+  db.logActivity(currentUser, `punched order for lead ${lead.leadNumber} (ETD ${etd})`, 'lead', lead.id);
+  return res.status(201).json({ message: 'Order punched successfully, pending approval', order, lead });
+});
+
+app.patch('/api/v1/pipeline/orders/:id/review', (req: Request, res: Response) => {
+  const currentUser = (req as any).currentUser as User;
+  const order = db.pipelineOrders.find(o => o.id === req.params.id) as any;
+  if (!order) return sendError(res, 404, 'NOT_FOUND', 'Order not found');
+  const { decision, reason } = req.body; // 'approve' | 'hold' | 'reject'
+  const lead = db.pipelineLeads.find(l => l.id === order.leadId) as any;
+  if (!lead) return sendError(res, 404, 'NOT_FOUND', 'Associated lead not found');
+
+  const now = new Date().toISOString();
+
+  if (decision === 'approve') {
+    order.status = 'approved';
+    order.approvedById = currentUser.id;
+    order.approvedByName = `${currentUser.firstName} ${currentUser.lastName}`;
+    order.approvedAt = now;
+    if (!order.orderNumber) {
+      const year = new Date().getFullYear();
+      order.orderNumber = `ORD-${year}-${String(db.pipelineOrders.filter((o: any) => o.orderNumber).length + 1).padStart(4, '0')}`;
+    }
+    order.updatedAt = now;
+    moveLeadToStage(lead, 'order_approved', currentUser, `Order ${order.orderNumber} approved`);
+    db.logActivity(currentUser, `approved order ${order.orderNumber} for lead ${lead.leadNumber}`, 'lead', lead.id);
+  } else if (decision === 'hold') {
+    if (!reason) return sendError(res, 400, 'VALIDATION_ERROR', 'A reason is required to put an order On Hold');
+    order.status = 'on_hold';
+    order.holdReason = reason;
+    order.updatedAt = now;
+    moveLeadToStage(lead, 'order_on_hold', currentUser, `Order held: ${reason}`);
+    db.logActivity(currentUser, `put order for lead ${lead.leadNumber} On Hold: ${reason}`, 'lead', lead.id);
+  } else if (decision === 'reject') {
+    if (lead.leadType !== 'service') return sendError(res, 400, 'VALIDATION_ERROR', 'Only service orders can be rejected');
+    order.status = 'rejected';
+    order.rejectReason = reason || '';
+    order.updatedAt = now;
+    moveLeadToStage(lead, 'order_rejected', currentUser, reason || 'Order rejected');
+    db.logActivity(currentUser, `rejected service order for lead ${lead.leadNumber}`, 'lead', lead.id);
+  } else {
+    return sendError(res, 400, 'VALIDATION_ERROR', 'decision must be approve, hold, or reject');
+  }
+
+  return res.json({ message: 'Order review recorded', order, lead });
+});
+
+app.get('/api/v1/pipeline/orders', (req: Request, res: Response) => {
+  const { status } = req.query;
+  let results = [...db.pipelineOrders];
+  if (status && status !== 'all') results = results.filter((o: any) => o.status === status);
+  results.sort((a: any, b: any) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+  const withLeadInfo = results.map((o: any) => {
+    const lead = db.pipelineLeads.find(l => l.id === o.leadId);
+    return { ...o, leadNumber: lead?.leadNumber, customerName: lead?.customerName, division: lead?.division };
+  });
+  return res.json({ orders: withLeadInfo, total: withLeadInfo.length });
+});
+
+// ---- Sales (project) execution: FR-E1..FR-E12 ----
+
+app.get('/api/v1/pipeline/orders/:id/execution', (req: Request, res: Response) => {
+  const order = db.pipelineOrders.find(o => o.id === req.params.id);
+  if (!order) return sendError(res, 404, 'NOT_FOUND', 'Order not found');
+  return res.json({
+    listItems: db.executionListItems.filter(i => i.orderId === order.id),
+    stages: db.salesExecutionStages.filter(s => s.orderId === order.id).sort((a, b) => a.stageIndex - b.stageIndex)
+  });
+});
+
+app.post('/api/v1/pipeline/orders/:id/welcome-call', (req: Request, res: Response) => {
+  const currentUser = (req as any).currentUser as User;
+  const order = db.pipelineOrders.find(o => o.id === req.params.id) as any;
+  if (!order || order.status !== 'approved') return sendError(res, 400, 'VALIDATION_ERROR', 'Order must be approved first');
+  let stage = db.salesExecutionStages.find((s: any) => s.orderId === order.id);
+  const now = new Date().toISOString();
+  if (!stage) {
+    stage = { id: 'exs-' + Date.now(), orderId: order.id, stageIndex: 0, dispatchDate: '', purchaseListComplete: false, manufacturingListComplete: false, materialDelivered: false, onsiteTeamAssigned: false, onsiteComplete: false, status: 'pending', welcomeCallLogged: true, siteReadinessChecked: false, createdAt: now, updatedAt: now } as any;
+    db.salesExecutionStages.push(stage as any);
+  } else {
+    (stage as any).welcomeCallLogged = true;
+  }
+  db.logActivity(currentUser, `logged welcome call for order ${order.orderNumber}`, 'lead', order.leadId);
+  return res.json({ message: 'Welcome call logged', stage });
+});
+
+app.post('/api/v1/pipeline/orders/:id/site-readiness', (req: Request, res: Response) => {
+  const currentUser = (req as any).currentUser as User;
+  const order = db.pipelineOrders.find(o => o.id === req.params.id);
+  if (!order) return sendError(res, 404, 'NOT_FOUND', 'Order not found');
+  const { siteImageUrls } = req.body;
+  if (!Array.isArray(siteImageUrls) || siteImageUrls.length === 0) {
+    return sendError(res, 400, 'VALIDATION_ERROR', 'Site images are required before site readiness can be confirmed');
+  }
+  let stage: any = db.salesExecutionStages.find((s: any) => s.orderId === order.id);
+  const now = new Date().toISOString();
+  if (!stage) {
+    stage = { id: 'exs-' + Date.now(), orderId: order.id, stageIndex: 0, dispatchDate: '', purchaseListComplete: false, manufacturingListComplete: false, materialDelivered: false, onsiteTeamAssigned: false, onsiteComplete: false, status: 'pending', welcomeCallLogged: false, siteReadinessChecked: true, siteReadinessEmailSentAt: now, siteImageUrls, createdAt: now, updatedAt: now };
+    db.salesExecutionStages.push(stage);
+  } else {
+    stage.siteReadinessChecked = true;
+    stage.siteReadinessEmailSentAt = now;
+    stage.siteImageUrls = siteImageUrls;
+  }
+  db.logActivity(currentUser, `confirmed site readiness for order ${order.orderNumber}`, 'lead', order.leadId);
+  return res.json({ message: 'Site readiness confirmed and client email sent', stage });
+});
+
+app.post('/api/v1/pipeline/orders/:id/execution-items', (req: Request, res: Response) => {
+  const order = db.pipelineOrders.find(o => o.id === req.params.id);
+  if (!order) return sendError(res, 404, 'NOT_FOUND', 'Order not found');
+  const { listType, itemName, tentativeDate, dispatchDate, notApplicable } = req.body;
+  if (!listType || (!notApplicable && !itemName)) {
+    return sendError(res, 400, 'VALIDATION_ERROR', 'List type and item name are required (unless marked Not Applicable)');
+  }
+  const item: any = {
+    id: 'eli-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6),
+    orderId: order.id,
+    listType,
+    itemName: itemName || 'Not Applicable',
+    tentativeDate: tentativeDate || undefined,
+    dispatchDate: dispatchDate || undefined,
+    notApplicable: !!notApplicable,
+    completed: false
+  };
+  db.executionListItems.push(item);
+  return res.status(201).json({ message: 'Execution item added', item });
+});
+
+app.patch('/api/v1/pipeline/execution-items/:id', (req: Request, res: Response) => {
+  const item = db.executionListItems.find(i => i.id === req.params.id) as any;
+  if (!item) return sendError(res, 404, 'NOT_FOUND', 'Execution item not found');
+  Object.assign(item, req.body, { id: item.id });
+  return res.json({ message: 'Execution item updated', item });
+});
+
+// FR-E6: club items with the same dispatch date into stages
+app.post('/api/v1/pipeline/orders/:id/club-stages', (req: Request, res: Response) => {
+  const currentUser = (req as any).currentUser as User;
+  const order = db.pipelineOrders.find(o => o.id === req.params.id);
+  if (!order) return sendError(res, 404, 'NOT_FOUND', 'Order not found');
+
+  const items = db.executionListItems.filter(i => i.orderId === order.id && !i.notApplicable && i.dispatchDate);
+  const dispatchDates = Array.from(new Set(items.map(i => i.dispatchDate))).sort();
+
+  if (dispatchDates.length === 0) {
+    return sendError(res, 400, 'VALIDATION_ERROR', 'At least one execution item needs a dispatch date before stages can be clubbed');
+  }
+
+  const existingStages = db.salesExecutionStages.filter((s: any) => s.orderId === order.id);
+  const now = new Date().toISOString();
+  const createdStages: any[] = [];
+
+  dispatchDates.forEach((date, idx) => {
+    let stage: any = existingStages.find((s: any) => s.dispatchDate === date);
+    if (!stage) {
+      stage = {
+        id: 'exs-' + Date.now() + '-' + idx,
+        orderId: order.id,
+        stageIndex: idx + 1,
+        dispatchDate: date,
+        purchaseListComplete: false,
+        manufacturingListComplete: false,
+        manufacturingStep: 'fabrication',
+        materialDelivered: false,
+        onsiteTeamAssigned: false,
+        onsiteComplete: false,
+        status: 'pending',
+        welcomeCallLogged: true,
+        siteReadinessChecked: true,
+        createdAt: now,
+        updatedAt: now
+      };
+      db.salesExecutionStages.push(stage);
+    }
+    for (const it of items) {
+      if (it.dispatchDate === date) (it as any).stageId = stage.id;
+    }
+    createdStages.push(stage);
+  });
+
+  db.logActivity(currentUser, `clubbed execution items into ${createdStages.length} stage(s) for order ${order.orderNumber}`, 'lead', order.leadId);
+  return res.json({ message: `${createdStages.length} stage(s) created from dispatch dates`, stages: createdStages });
+});
+
+app.patch('/api/v1/pipeline/execution-stages/:id', (req: Request, res: Response) => {
+  const currentUser = (req as any).currentUser as User;
+  const stage = db.salesExecutionStages.find((s: any) => s.id === req.params.id) as any;
+  if (!stage) return sendError(res, 404, 'NOT_FOUND', 'Execution stage not found');
+
+  // FR-E9: dispatch complete requires an invoice/DC attachment
+  if (req.body.status === 'dispatched' && !req.body.dispatchDocUrl && !stage.dispatchDocUrl) {
+    return sendError(res, 400, 'VALIDATION_ERROR', 'An Invoice / Delivery Challan is required to mark the stage as dispatched');
+  }
+
+  Object.assign(stage, req.body, { id: stage.id, updatedAt: new Date().toISOString() });
+
+  if (stage.onsiteComplete) stage.status = 'completed';
+  else if (stage.materialDelivered) stage.status = 'delivered';
+  else if (stage.dispatchDocUrl) stage.status = 'dispatched';
+  else if (stage.purchaseListComplete && stage.manufacturingListComplete) stage.status = 'in_progress';
+
+  db.logActivity(currentUser, `updated execution stage ${stage.stageIndex} for order ${stage.orderId}`, 'lead');
+
+  // FR-E12: when all stages of the order are complete, close the order and hand over to Service
+  const order = db.pipelineOrders.find(o => o.id === stage.orderId);
+  if (order) {
+    const allStages = db.salesExecutionStages.filter((s: any) => s.orderId === order.id);
+    if (allStages.length > 0 && allStages.every((s: any) => s.status === 'completed')) {
+      const lead = db.pipelineLeads.find(l => l.id === order.leadId) as any;
+      if (lead && lead.stage !== 'order_closed') {
+        moveLeadToStage(lead, 'order_closed', currentUser, 'All execution stages complete — warranty period begins');
+        lead.amcStatus = 'active';
+      }
+    }
+  }
+
+  return res.json({ message: 'Execution stage updated', stage });
+});
+
+// ---- Service component & fault assessment (FR-S4, FR-S5) ----
+
+app.post('/api/v1/pipeline/leads/:id/component-assessment', (req: Request, res: Response) => {
+  const currentUser = (req as any).currentUser as User;
+  const lead = db.pipelineLeads.find(l => l.id === req.params.id) as any;
+  if (!lead) return sendError(res, 404, 'NOT_FOUND', 'Lead not found');
+  const { equipmentCategory, photoUrls, conditionNotes } = req.body;
+  if (!equipmentCategory || !Array.isArray(photoUrls) || photoUrls.length < 3) {
+    return sendError(res, 400, 'VALIDATION_ERROR', 'Equipment category and at least 3 photos are required');
+  }
+  const now = new Date().toISOString();
+  const assessment: any = {
+    id: 'sca-' + Date.now(),
+    leadId: lead.id,
+    equipmentCategory,
+    photoUrls,
+    conditionNotes: conditionNotes || '',
+    assessedById: currentUser.id,
+    assessedByName: `${currentUser.firstName} ${currentUser.lastName}`,
+    assessedAt: now
+  };
+  db.serviceComponentAssessments.push(assessment);
+  moveLeadToStage(lead, 'component_assessment', currentUser, 'Component assessment recorded');
+  db.logActivity(currentUser, `recorded component assessment for lead ${lead.leadNumber}`, 'lead', lead.id);
+  return res.status(201).json({ message: 'Component assessment saved', assessment, lead });
+});
+
+app.post('/api/v1/pipeline/leads/:id/fault-assessment', (req: Request, res: Response) => {
+  const currentUser = (req as any).currentUser as User;
+  const lead = db.pipelineLeads.find(l => l.id === req.params.id) as any;
+  if (!lead) return sendError(res, 404, 'NOT_FOUND', 'Lead not found');
+  const { faultListPhotoUrl } = req.body;
+  if (!faultListPhotoUrl) return sendError(res, 400, 'VALIDATION_ERROR', 'A photo of the handwritten fault list is required');
+  const now = new Date().toISOString();
+  const assessment: any = {
+    id: 'sfa-' + Date.now(),
+    leadId: lead.id,
+    faultListPhotoUrl,
+    uploadedById: currentUser.id,
+    uploadedByName: `${currentUser.firstName} ${currentUser.lastName}`,
+    uploadedAt: now
+  };
+  db.serviceFaultAssessments.push(assessment);
+  moveLeadToStage(lead, 'fault_assessment', currentUser, 'Fault list uploaded');
+  db.logActivity(currentUser, `uploaded fault list for lead ${lead.leadNumber}`, 'lead', lead.id);
+  return res.status(201).json({ message: 'Fault list uploaded', assessment, lead });
+});
+
+// ---- Service (repair) execution: FR-X1..FR-X5 ----
+
+app.get('/api/v1/pipeline/orders/:id/service-execution', (req: Request, res: Response) => {
+  const order = db.pipelineOrders.find(o => o.id === req.params.id);
+  if (!order) return sendError(res, 404, 'NOT_FOUND', 'Order not found');
+  let execution: any = db.serviceExecutions.find((e: any) => e.orderId === order.id);
+  let tracks = db.serviceExecutionTracks.filter((t: any) => t.orderId === order.id);
+  return res.json({ execution: execution || null, tracks });
+});
+
+app.post('/api/v1/pipeline/orders/:id/service-execution/start', (req: Request, res: Response) => {
+  const currentUser = (req as any).currentUser as User;
+  const order = db.pipelineOrders.find(o => o.id === req.params.id);
+  if (!order || order.status !== 'approved') return sendError(res, 400, 'VALIDATION_ERROR', 'Service order must be approved first');
+
+  const now = new Date().toISOString();
+  let execution: any = db.serviceExecutions.find((e: any) => e.orderId === order.id);
+  if (!execution) {
+    execution = { id: 'sve-' + Date.now(), orderId: order.id, dismantlingComplete: true, assemblyInstallationComplete: false, onsiteInstallationRequired: !!req.body.onsiteInstallationRequired, onsiteInstallationComplete: false, createdAt: now, updatedAt: now };
+    db.serviceExecutions.push(execution);
+
+    (['spares', 'machining', 'labour'] as const).forEach(trackType => {
+      db.serviceExecutionTracks.push({ id: 'svt-' + Date.now() + '-' + trackType, orderId: order.id, trackType, listGenerated: false, items: [] } as any);
+    });
+  }
+
+  const lead = db.pipelineLeads.find(l => l.id === order.leadId) as any;
+  if (lead) moveLeadToStage(lead, 'repair_execution', currentUser, 'Dismantling complete, repair execution started');
+  db.logActivity(currentUser, `started service execution for order ${order.orderNumber || order.id}`, 'lead', order.leadId);
+  return res.status(201).json({ message: 'Dismantling logged, repair execution started', execution });
+});
+
+app.patch('/api/v1/pipeline/service-tracks/:id', (req: Request, res: Response) => {
+  const track = db.serviceExecutionTracks.find((t: any) => t.id === req.params.id) as any;
+  if (!track) return sendError(res, 404, 'NOT_FOUND', 'Service execution track not found');
+  Object.assign(track, req.body, { id: track.id });
+  return res.json({ message: 'Track updated', track });
+});
+
+app.patch('/api/v1/pipeline/service-execution/:id', (req: Request, res: Response) => {
+  const currentUser = (req as any).currentUser as User;
+  const execution = db.serviceExecutions.find((e: any) => e.id === req.params.id) as any;
+  if (!execution) return sendError(res, 404, 'NOT_FOUND', 'Service execution not found');
+
+  const tracks = db.serviceExecutionTracks.filter((t: any) => t.orderId === execution.orderId);
+  const allTracksDone = tracks.every((t: any) => t.purchaseComplete || t.jobComplete || t.paintingComplete || !t.listGenerated);
+
+  if (req.body.assemblyInstallationComplete && !allTracksDone) {
+    return sendError(res, 400, 'VALIDATION_ERROR', 'All three tracks (spares, machining, labour) must be complete before assembly/installation');
+  }
+
+  Object.assign(execution, req.body, { id: execution.id, updatedAt: new Date().toISOString() });
+
+  const order = db.pipelineOrders.find(o => o.id === execution.orderId);
+  const lead = order ? (db.pipelineLeads.find(l => l.id === order.leadId) as any) : null;
+
+  if (lead) {
+    if (execution.dispatchDocUrl && execution.dispatchDate) {
+      moveLeadToStage(lead, 'dispatch', currentUser, 'Repair dispatched');
+    }
+    if (!execution.onsiteInstallationRequired || execution.onsiteInstallationComplete) {
+      if (execution.assemblyInstallationComplete && execution.dispatchDocUrl) {
+        moveLeadToStage(lead, 'closed', currentUser, 'Service order closed');
+      }
+    }
+  }
+
+  db.logActivity(currentUser, `updated service execution for order ${execution.orderId}`, 'lead');
+  return res.json({ message: 'Service execution updated', execution });
+});
+
 export { app };
