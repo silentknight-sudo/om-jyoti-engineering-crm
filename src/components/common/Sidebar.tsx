@@ -16,6 +16,9 @@ import React from 'react';
   Truck,
   ShoppingBag,
   Wallet,
+  GitBranch,
+  PhoneCall,
+  ClipboardCheck,
   X
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
@@ -37,6 +40,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
   const navItems = [
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, permission: 'dashboard' },
+    { id: 'pipelineDashboard', label: 'Pipeline Dashboard', icon: BarChart3, badge: 'New', permission: 'pipeline' },
+    { id: 'pipeline', label: 'Sales & Service Pipeline', icon: GitBranch, badge: 'New', permission: 'pipeline' },
+    { id: 'followups', label: 'Follow-up Queue', icon: PhoneCall, badge: 'New', permission: 'pipeline' },
+    { id: 'approvals', label: 'Approver Queue', icon: ClipboardCheck, badge: 'New', permission: 'pipeline' },
     { id: 'leads', label: 'Leads Management', icon: Users, badge: 'Live', permission: 'leads' },
     { id: 'customers', label: 'Customers', icon: Users, permission: 'customers' },
     { id: 'quotations', label: 'Quotation Maker', icon: FileText, permission: 'quotations' },

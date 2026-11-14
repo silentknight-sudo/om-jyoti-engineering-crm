@@ -574,5 +574,130 @@ export const api = {
     const limit = typeof params === 'number' ? params : (params?.limit || 50);
     const search = typeof params === 'object' && params?.search ? `&search=${encodeURIComponent(params.search)}` : '';
     return request(`/api/v1/activity-logs?limit=${limit}${search}`);
+  },
+
+  // ===== Pipeline module (SRS v1.0) =====
+
+  async getPipelineLeads(params?: { leadType?: string; division?: string; stage?: string; ownerId?: string; search?: string }): Promise<{ leads: any[]; total: number }> {
+    const sp = new URLSearchParams();
+    if (params?.leadType) sp.set('leadType', params.leadType);
+    if (params?.division) sp.set('division', params.division);
+    if (params?.stage) sp.set('stage', params.stage);
+    if (params?.ownerId) sp.set('ownerId', params.ownerId);
+    if (params?.search) sp.set('search', params.search);
+    const q = sp.toString();
+    return request(`/api/v1/pipeline/leads${q ? '?' + q : ''}`);
+  },
+
+  async getPipelineLeadById(id: string): Promise<any> {
+    return request(`/api/v1/pipeline/leads/${id}`);
+  },
+
+  async createPipelineLead(data: any): Promise<{ message: string; lead: any }> {
+    return request('/api/v1/pipeline/leads', { method: 'POST', body: JSON.stringify(data) });
+  },
+
+  async updatePipelineLead(id: string, data: any): Promise<{ message: string; lead: any }> {
+    return request(`/api/v1/pipeline/leads/${id}`, { method: 'PUT', body: JSON.stringify(data) });
+  },
+
+  async reassignPipelineLead(id: string, ownerId: string): Promise<{ message: string; lead: any }> {
+    return request(`/api/v1/pipeline/leads/${id}/reassign`, { method: 'PATCH', body: JSON.stringify({ ownerId }) });
+  },
+
+  async movePipelineLeadStage(id: string, stage: string, note?: string): Promise<{ message: string; lead: any }> {
+    return request(`/api/v1/pipeline/leads/${id}/stage`, { method: 'PATCH', body: JSON.stringify({ stage, note }) });
+  },
+
+  async assignTechnician(id: string, technicianId: string, assessmentLocation?: string): Promise<{ message: string; lead: any }> {
+    return request(`/api/v1/pipeline/leads/${id}/assign-technician`, { method: 'PATCH', body: JSON.stringify({ technicianId, assessmentLocation }) });
+  },
+
+  async savePipelineRequirementSheet(leadId: string, fields: Record<string, string>): Promise<{ message: string; requirementSheet: any }> {
+    return request(`/api/v1/pipeline/leads/${leadId}/requirement-sheet`, { method: 'PUT', body: JSON.stringify({ fields }) });
+  },
+
+  async createFollowUp(leadId: string, data: any): Promise<{ message: string; activity: any; lead: any }> {
+    return request(`/api/v1/pipeline/leads/${leadId}/follow-ups`, { method: 'POST', body: JSON.stringify(data) });
+  },
+
+  async getFollowUpDashboard(ownerId?: string): Promise<{ due: any[]; overdue: any[]; upcoming: any[] }> {
+    return request(`/api/v1/pipeline/follow-ups/dashboard${ownerId ? '?ownerId=' + ownerId : ''}`);
+  },
+
+  async createNegotiation(leadId: string, data: any): Promise<{ message: string; negotiation: any; lead: any }> {
+    return request(`/api/v1/pipeline/leads/${leadId}/negotiations`, { method: 'POST', body: JSON.stringify(data) });
+  },
+
+  async createPipelineQuotation(leadId: string, data: any): Promise<{ message: string; quotation: any; lead: any }> {
+    return request(`/api/v1/pipeline/leads/${leadId}/quotations`, { method: 'POST', body: JSON.stringify(data) });
+  },
+
+  async submitPipelineQuotation(id: string, emailScreenshotUrl: string): Promise<{ message: string; quotation: any }> {
+    return request(`/api/v1/pipeline/quotations/${id}/submit`, { method: 'PATCH', body: JSON.stringify({ emailScreenshotUrl }) });
+  },
+
+  async punchOrder(leadId: string, data: any): Promise<{ message: string; order: any; lead: any }> {
+    return request(`/api/v1/pipeline/leads/${leadId}/orders`, { method: 'POST', body: JSON.stringify(data) });
+  },
+
+  async reviewOrder(id: string, decision: 'approve' | 'hold' | 'reject', reason?: string): Promise<{ message: string; order: any; lead: any }> {
+    return request(`/api/v1/pipeline/orders/${id}/review`, { method: 'PATCH', body: JSON.stringify({ decision, reason }) });
+  },
+
+  async getPipelineOrders(status?: string): Promise<{ orders: any[]; total: number }> {
+    return request(`/api/v1/pipeline/orders${status ? '?status=' + status : ''}`);
+  },
+
+  async logWelcomeCall(orderId: string): Promise<{ message: string; stage: any }> {
+    return request(`/api/v1/pipeline/orders/${orderId}/welcome-call`, { method: 'POST' });
+  },
+
+  async confirmSiteReadiness(orderId: string, siteImageUrls: string[]): Promise<{ message: string; stage: any }> {
+    return request(`/api/v1/pipeline/orders/${orderId}/site-readiness`, { method: 'POST', body: JSON.stringify({ siteImageUrls }) });
+  },
+
+  async getExecution(orderId: string): Promise<{ listItems: any[]; stages: any[] }> {
+    return request(`/api/v1/pipeline/orders/${orderId}/execution`);
+  },
+
+  async addExecutionItem(orderId: string, data: any): Promise<{ message: string; item: any }> {
+    return request(`/api/v1/pipeline/orders/${orderId}/execution-items`, { method: 'POST', body: JSON.stringify(data) });
+  },
+
+  async updateExecutionItem(id: string, data: any): Promise<{ message: string; item: any }> {
+    return request(`/api/v1/pipeline/execution-items/${id}`, { method: 'PATCH', body: JSON.stringify(data) });
+  },
+
+  async clubExecutionStages(orderId: string): Promise<{ message: string; stages: any[] }> {
+    return request(`/api/v1/pipeline/orders/${orderId}/club-stages`, { method: 'POST' });
+  },
+
+  async updateExecutionStage(id: string, data: any): Promise<{ message: string; stage: any }> {
+    return request(`/api/v1/pipeline/execution-stages/${id}`, { method: 'PATCH', body: JSON.stringify(data) });
+  },
+
+  async saveComponentAssessment(leadId: string, data: any): Promise<{ message: string; assessment: any; lead: any }> {
+    return request(`/api/v1/pipeline/leads/${leadId}/component-assessment`, { method: 'POST', body: JSON.stringify(data) });
+  },
+
+  async saveFaultAssessment(leadId: string, faultListPhotoUrl: string): Promise<{ message: string; assessment: any; lead: any }> {
+    return request(`/api/v1/pipeline/leads/${leadId}/fault-assessment`, { method: 'POST', body: JSON.stringify({ faultListPhotoUrl }) });
+  },
+
+  async getServiceExecution(orderId: string): Promise<{ execution: any; tracks: any[] }> {
+    return request(`/api/v1/pipeline/orders/${orderId}/service-execution`);
+  },
+
+  async startServiceExecution(orderId: string, onsiteInstallationRequired: boolean): Promise<{ message: string; execution: any }> {
+    return request(`/api/v1/pipeline/orders/${orderId}/service-execution/start`, { method: 'POST', body: JSON.stringify({ onsiteInstallationRequired }) });
+  },
+
+  async updateServiceTrack(id: string, data: any): Promise<{ message: string; track: any }> {
+    return request(`/api/v1/pipeline/service-tracks/${id}`, { method: 'PATCH', body: JSON.stringify(data) });
+  },
+
+  async updateServiceExecution(id: string, data: any): Promise<{ message: string; execution: any }> {
+    return request(`/api/v1/pipeline/service-execution/${id}`, { method: 'PATCH', body: JSON.stringify(data) });
   }
 };

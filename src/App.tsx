@@ -20,6 +20,10 @@ import { DeliveryChallanView } from './components/challans/DeliveryChallanView';
 import { PurchasesView } from './components/purchases/PurchasesView';
 import { ExpensesView } from './components/expenses/ExpensesView';
 import { ServiceJobsView } from './components/service/ServiceJobsView';
+import { PipelineLeadsView } from './components/pipeline/PipelineLeadsView';
+import { PipelineDashboardView } from './components/pipeline/PipelineDashboardView';
+import { FollowUpQueueView } from './components/pipeline/FollowUpQueueView';
+import { ApproverQueueView } from './components/pipeline/ApproverQueueView';
 import { Lead } from './types';
 
 const MainLayout: React.FC = () => {
@@ -132,6 +136,14 @@ const MainLayout: React.FC = () => {
           {activeTab === 'expenses' && <ExpensesView />}
 
           {activeTab === 'service' && <ServiceJobsView />}
+
+          {activeTab === 'pipelineDashboard' && <PipelineDashboardView onNavigate={handleNavigate} />}
+
+          {activeTab === 'pipeline' && <PipelineLeadsView />}
+
+          {activeTab === 'followups' && <FollowUpQueueView />}
+
+          {activeTab === 'approvals' && <ApproverQueueView />}
 
           {activeTab === 'inventory' && <InventoryView />}
 
